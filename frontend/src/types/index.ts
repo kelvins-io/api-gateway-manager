@@ -17,6 +17,7 @@ export interface Space {
   description: string
   prefix: string
   owner_id: number
+  group_count?: number
   created_at?: string
 }
 
@@ -43,6 +44,7 @@ export interface ApiGroup {
   name: string
   gateway?: Gateway
   space?: { prefix: string }
+  api_count?: number
 }
 
 export interface UpstreamTarget {

@@ -20,7 +20,11 @@
         <template #default="{ row }">
           <el-button link type="primary" @click="$router.push(`/spaces/${row.id}/members`)">成员</el-button>
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" @click="onDelete(row)">删除</el-button>
+          <el-tooltip :disabled="!row.group_count" content="空间下仍有分组，不能删除" placement="top">
+            <span>
+              <el-button link type="danger" @click="onDelete(row)" :disabled="!!row.group_count">删除</el-button>
+            </span>
+          </el-tooltip>
         </template>
       </el-table-column>
     </el-table>

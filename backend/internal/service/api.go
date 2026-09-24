@@ -298,7 +298,10 @@ func (s *APIService) Delete(id uint64) error {
 		return err
 	}
 	if api.Status == model.APIStatusPublished {
-		return fmt.Errorf("%w: please offline api before delete", ErrConflict)
+		return fmt.Errorf("%w: 已发布的 API 不允许删除", ErrConflict)
+	}
+	if len(api.Consumers) > 0 {
+		return fmt.Errorf("%w: 已关联 Consumer 的 API 不允许删除", ErrConflict)
 	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("api_id = ?", id).Delete(&model.APIVersion{}).Error; err != nil {
@@ -383,6 +386,9 @@ func (s *APIService) Offline(ctx context.Context, id uint64) (*model.API, error)
 	}
 	if api.Status != model.APIStatusPublished {
 		return nil, fmt.Errorf("%w: api is not published", ErrBadRequest)
+	}
+	if len(api.Consumers) > 0 {
+		return nil, fmt.Errorf("%w: 已关联 Consumer 的 API 不允许下线", ErrConflict)
 	}
 	if api.Group == nil || api.Group.Gateway == nil {
 		return nil, fmt.Errorf("%w: gateway not configured", ErrBadRequest)

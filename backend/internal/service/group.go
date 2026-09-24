@@ -22,8 +22,7 @@ type CreateGroupInput struct {
 }
 
 type UpdateGroupInput struct {
-	Name      string `json:"name" binding:"omitempty,min=1,max=128"`
-	GatewayID uint64 `json:"gateway_id"`
+	Name string `json:"name" binding:"omitempty,min=1,max=128"`
 }
 
 func (s *GroupService) Create(spaceID uint64, in CreateGroupInput) (*model.APIGroup, error) {
@@ -47,8 +46,39 @@ func (s *GroupService) Create(spaceID uint64, in CreateGroupInput) (*model.APIGr
 
 func (s *GroupService) ListBySpace(spaceID uint64) ([]model.APIGroup, error) {
 	var list []model.APIGroup
-	err := s.db.Preload("Gateway").Where("space_id = ?", spaceID).Order("id desc").Find(&list).Error
-	return list, err
+	if err := s.db.Preload("Gateway").Where("space_id = ?", spaceID).Order("id desc").Find(&list).Error; err != nil {
+		return nil, err
+	}
+	if err := fillGroupAPICounts(s.db, list); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+func fillGroupAPICounts(db *gorm.DB, list []model.APIGroup) error {
+	if len(list) == 0 {
+		return nil
+	}
+	ids := make([]uint64, len(list))
+	for i, g := range list {
+		ids[i] = g.ID
+	}
+	type row struct {
+		GroupID uint64
+		Cnt     int64
+	}
+	var rows []row
+	if err := db.Model(&model.API{}).Select("group_id, count(*) as cnt").Where("group_id IN ?", ids).Group("group_id").Scan(&rows).Error; err != nil {
+		return err
+	}
+	counts := make(map[uint64]int64, len(rows))
+	for _, r := range rows {
+		counts[r.GroupID] = r.Cnt
+	}
+	for i := range list {
+		list[i].APICount = counts[list[i].ID]
+	}
+	return nil
 }
 
 func (s *GroupService) Get(id uint64) (*model.APIGroup, error) {
@@ -71,16 +101,6 @@ func (s *GroupService) Update(id uint64, in UpdateGroupInput) (*model.APIGroup, 
 	if in.Name != "" {
 		updates["name"] = in.Name
 	}
-	if in.GatewayID > 0 {
-		var gw model.Gateway
-		if err := s.db.First(&gw, in.GatewayID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, fmt.Errorf("%w: gateway not found", ErrBadRequest)
-			}
-			return nil, err
-		}
-		updates["gateway_id"] = in.GatewayID
-	}
 	if len(updates) > 0 {
 		if err := s.db.Model(group).Updates(updates).Error; err != nil {
 			return nil, err
@@ -90,37 +110,24 @@ func (s *GroupService) Update(id uint64, in UpdateGroupInput) (*model.APIGroup, 
 }
 
 func (s *GroupService) Delete(id uint64) error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		var apis []model.API
-		if err := tx.Where("group_id = ?", id).Find(&apis).Error; err != nil {
-			return err
-		}
-		for _, a := range apis {
-			if a.Status == model.APIStatusPublished {
-				return fmt.Errorf("%w: please offline published apis first", ErrConflict)
-			}
-			if err := tx.Where("api_id = ?", a.ID).Delete(&model.APIVersion{}).Error; err != nil {
-				return err
-			}
-			if err := tx.Exec("DELETE FROM api_plugins WHERE api_id = ?", a.ID).Error; err != nil {
-				return err
-			}
-			if err := tx.Exec("DELETE FROM api_consumers WHERE api_id = ?", a.ID).Error; err != nil {
-				return err
-			}
-		}
-		if err := tx.Where("group_id = ?", id).Delete(&model.API{}).Error; err != nil {
-			return err
-		}
-		res := tx.Delete(&model.APIGroup{}, id)
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return ErrNotFound
-		}
-		return nil
-	})
+	if _, err := s.Get(id); err != nil {
+		return err
+	}
+	var apiCount int64
+	if err := s.db.Model(&model.API{}).Where("group_id = ?", id).Count(&apiCount).Error; err != nil {
+		return err
+	}
+	if apiCount > 0 {
+		return fmt.Errorf("%w: 分组下仍有 API，不能删除", ErrConflict)
+	}
+	res := s.db.Delete(&model.APIGroup{}, id)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *GroupService) SpaceIDOfGroup(groupID uint64) (uint64, error) {

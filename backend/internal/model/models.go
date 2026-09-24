@@ -39,6 +39,7 @@ type Space struct {
 	OwnerID     uint64    `gorm:"not null;index" json:"owner_id"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	GroupCount  int64     `gorm:"-" json:"group_count"`
 }
 
 type SpaceMember struct {
@@ -71,8 +72,9 @@ type APIGroup struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
-	Gateway *Gateway `gorm:"foreignKey:GatewayID" json:"gateway,omitempty"`
-	Space   *Space   `gorm:"foreignKey:SpaceID" json:"space,omitempty"`
+	Gateway  *Gateway `gorm:"foreignKey:GatewayID" json:"gateway,omitempty"`
+	Space    *Space   `gorm:"foreignKey:SpaceID" json:"space,omitempty"`
+	APICount int64    `gorm:"-" json:"api_count"`
 }
 
 type API struct {

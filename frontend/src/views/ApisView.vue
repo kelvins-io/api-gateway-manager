@@ -51,11 +51,19 @@
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button link type="success" @click="onPublish(row)">发布</el-button>
-          <el-button link type="warning" @click="onOffline(row)" :disabled="row.status !== 'published'">下线</el-button>
+          <el-tooltip :disabled="canOffline(row)" content="已关联 Consumer 的 API 不允许下线" placement="top">
+            <span>
+              <el-button link type="warning" @click="onOffline(row)" :disabled="!canOffline(row)">下线</el-button>
+            </span>
+          </el-tooltip>
           <el-button link type="primary" @click="openVersions(row)">版本</el-button>
           <el-button link type="primary" @click="openPlugins(row)">Plugins</el-button>
           <el-button link type="primary" @click="openConsumers(row)">Consumers</el-button>
-          <el-button link type="danger" @click="onDelete(row)">删除</el-button>
+          <el-tooltip :disabled="canDelete(row)" :content="deleteHint(row)" placement="top">
+            <span>
+              <el-button link type="danger" @click="onDelete(row)" :disabled="!canDelete(row)">删除</el-button>
+            </span>
+          </el-tooltip>
         </template>
       </el-table-column>
     </el-table>
@@ -388,6 +396,24 @@ function applyPrefix(path: string) {
   const prefix = spacePrefix.value
   if (!prefix || path === prefix || path.startsWith(`${prefix}/`)) return path
   return `${prefix}${path}`
+}
+
+function hasConsumers(row: ApiItem) {
+  return (row.consumers || []).length > 0
+}
+
+function canOffline(row: ApiItem) {
+  return row.status === 'published' && !hasConsumers(row)
+}
+
+function canDelete(row: ApiItem) {
+  return row.status !== 'published' && !hasConsumers(row)
+}
+
+function deleteHint(row: ApiItem) {
+  if (row.status === 'published') return '已发布的 API 不允许删除'
+  if (hasConsumers(row)) return '已关联 Consumer 的 API 不允许删除'
+  return ''
 }
 
 function protocolsOf(row: ApiItem): string[] {

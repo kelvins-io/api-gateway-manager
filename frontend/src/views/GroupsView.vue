@@ -38,7 +38,11 @@
       <el-table-column label="操作" width="160">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" @click="onDelete(row)">删除</el-button>
+          <el-tooltip :disabled="!row.api_count" content="分组下仍有 API，不能删除" placement="top">
+            <span>
+              <el-button link type="danger" @click="onDelete(row)" :disabled="!!row.api_count">删除</el-button>
+            </span>
+          </el-tooltip>
         </template>
       </el-table-column>
     </el-table>
@@ -55,7 +59,7 @@
           <el-input v-model="form.name" />
         </el-form-item>
         <el-form-item label="所属网关">
-          <el-select v-model="form.gateway_id" style="width: 100%" placeholder="选择网关">
+          <el-select v-model="form.gateway_id" style="width: 100%" placeholder="选择网关" :disabled="!!editing">
             <el-option
               v-for="g in gateways"
               :key="g.id"
@@ -132,7 +136,7 @@ async function save() {
   saving.value = true
   try {
     if (editing.value) {
-      await apiMod.updateGroup(editing.value.id, { name: form.name, gateway_id: form.gateway_id })
+      await apiMod.updateGroup(editing.value.id, { name: form.name })
       ElMessage.success('更新成功')
     } else {
       await apiMod.createGroup(store.currentSpaceId, { name: form.name, gateway_id: form.gateway_id })

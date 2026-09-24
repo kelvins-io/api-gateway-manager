@@ -101,13 +101,48 @@ func (s *SpaceService) List(userID uint64, isSystemAdmin bool) ([]model.Space, e
 		if err := s.db.Order("id desc").Find(&spaces).Error; err != nil {
 			return nil, err
 		}
+		if err := fillSpaceGroupCounts(s.db, spaces); err != nil {
+			return nil, err
+		}
 		return spaces, nil
 	}
 	err := s.db.Joins("JOIN space_members ON space_members.space_id = spaces.id").
 		Where("space_members.user_id = ?", userID).
 		Order("spaces.id desc").
 		Find(&spaces).Error
-	return spaces, err
+	if err != nil {
+		return nil, err
+	}
+	if err := fillSpaceGroupCounts(s.db, spaces); err != nil {
+		return nil, err
+	}
+	return spaces, nil
+}
+
+func fillSpaceGroupCounts(db *gorm.DB, list []model.Space) error {
+	if len(list) == 0 {
+		return nil
+	}
+	ids := make([]uint64, len(list))
+	for i, space := range list {
+		ids[i] = space.ID
+	}
+	type row struct {
+		SpaceID uint64
+		Cnt     int64
+	}
+	var rows []row
+	if err := db.Model(&model.APIGroup{}).Select("space_id, count(*) as cnt").Where("space_id IN ?", ids).Group("space_id").Scan(&rows).Error; err != nil {
+		return err
+	}
+	counts := make(map[uint64]int64, len(rows))
+	for _, r := range rows {
+		counts[r.SpaceID] = r.Cnt
+	}
+	for i := range list {
+		list[i].GroupCount = counts[list[i].ID]
+	}
+	return nil
 }
 
 func (s *SpaceService) Get(id uint64) (*model.Space, error) {
@@ -149,28 +184,17 @@ func (s *SpaceService) Update(id uint64, in UpdateSpaceInput) (*model.Space, err
 }
 
 func (s *SpaceService) Delete(id uint64) error {
+	if _, err := s.Get(id); err != nil {
+		return err
+	}
+	var groupCount int64
+	if err := s.db.Model(&model.APIGroup{}).Where("space_id = ?", id).Count(&groupCount).Error; err != nil {
+		return err
+	}
+	if groupCount > 0 {
+		return fmt.Errorf("%w: 空间下仍有分组，不能删除", ErrConflict)
+	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		var groups []model.APIGroup
-		if err := tx.Where("space_id = ?", id).Find(&groups).Error; err != nil {
-			return err
-		}
-		for _, g := range groups {
-			var apis []model.API
-			if err := tx.Where("group_id = ?", g.ID).Find(&apis).Error; err != nil {
-				return err
-			}
-			for _, a := range apis {
-				if err := tx.Where("api_id = ?", a.ID).Delete(&model.APIVersion{}).Error; err != nil {
-					return err
-				}
-			}
-			if err := tx.Where("group_id = ?", g.ID).Delete(&model.API{}).Error; err != nil {
-				return err
-			}
-		}
-		if err := tx.Where("space_id = ?", id).Delete(&model.APIGroup{}).Error; err != nil {
-			return err
-		}
 		var ups []model.Upstream
 		if err := tx.Where("space_id = ?", id).Find(&ups).Error; err != nil {
 			return err

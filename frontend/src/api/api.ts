@@ -9,7 +9,7 @@ export function createGroup(spaceId: number, data: { name: string; gateway_id: n
   return request<ApiGroup>(() => http.post(`/spaces/${spaceId}/groups`, data))
 }
 
-export function updateGroup(gid: number, data: { name?: string; gateway_id?: number }) {
+export function updateGroup(gid: number, data: { name?: string }) {
   return request<ApiGroup>(() => http.put(`/groups/${gid}`, data))
 }
 

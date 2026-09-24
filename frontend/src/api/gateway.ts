@@ -23,7 +23,7 @@ export function createGateway(data: { name: string; admin_api: string; domain: s
   return request<Gateway>(() => http.post('/gateways', data))
 }
 
-export function updateGateway(id: number, data: Partial<Gateway>) {
+export function updateGateway(id: number, data: { name?: string; domain?: string; network_zone?: string }) {
   return request<Gateway>(() => http.put(`/gateways/${id}`, data))
 }
 
