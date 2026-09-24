@@ -4,7 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
 	kongclient "github.com/kelvins-io/api-gateway-manager/internal/kong"
 	"github.com/kelvins-io/api-gateway-manager/internal/model"
@@ -22,13 +26,60 @@ func NewGatewayService(db *gorm.DB) *GatewayService {
 type CreateGatewayInput struct {
 	Name        string `json:"name" binding:"required,min=2,max=128"`
 	AdminAPI    string `json:"admin_api" binding:"required,min=8,max=512"`
-	NetworkZone string `json:"network_zone" binding:"required,min=1,max=128"`
+	Domain      string `json:"domain" binding:"required,max=255"`
+	NetworkZone string `json:"network_zone" binding:"required,oneof=内网 DMZ"`
 }
 
 type UpdateGatewayInput struct {
 	Name        string `json:"name" binding:"omitempty,min=2,max=128"`
 	AdminAPI    string `json:"admin_api" binding:"omitempty,min=8,max=512"`
-	NetworkZone string `json:"network_zone" binding:"omitempty,min=1,max=128"`
+	Domain      string `json:"domain" binding:"omitempty,max=255"`
+	NetworkZone string `json:"network_zone" binding:"omitempty,oneof=内网 DMZ"`
+}
+
+func normalizeGatewayDomain(raw string) (string, error) {
+	domain := strings.TrimSpace(raw)
+	host, portText, err := net.SplitHostPort(domain)
+	if err != nil || host == "" {
+		return "", fmt.Errorf("%w: domain must be ip:port or domain:port", ErrBadRequest)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return "", fmt.Errorf("%w: domain port must be between 1 and 65535", ErrBadRequest)
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return net.JoinHostPort(ip.String(), strconv.Itoa(port)), nil
+	}
+	if !validDomainHost(host) {
+		return "", fmt.Errorf("%w: domain must be ip:port or domain:port", ErrBadRequest)
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port)), nil
+}
+
+func validDomainHost(host string) bool {
+	if host == "" || len(host) > 253 || strings.Contains(host, "..") {
+		return false
+	}
+	hasLetter := false
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, r := range label {
+			switch {
+			case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+				hasLetter = true
+			case r >= '0' && r <= '9', r == '-':
+			default:
+				if unicode.IsLetter(r) {
+					hasLetter = true
+					continue
+				}
+				return false
+			}
+		}
+	}
+	return hasLetter
 }
 
 func (s *GatewayService) probeAdminAPI(adminAPI string) error {
@@ -52,12 +103,17 @@ func (s *GatewayService) Create(in CreateGatewayInput) (*model.Gateway, error) {
 	if count > 0 {
 		return nil, fmt.Errorf("%w: gateway name already exists", ErrConflict)
 	}
+	domain, err := normalizeGatewayDomain(in.Domain)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.probeAdminAPI(in.AdminAPI); err != nil {
 		return nil, err
 	}
 	gw := &model.Gateway{
 		Name:        in.Name,
 		AdminAPI:    in.AdminAPI,
+		Domain:      domain,
 		NetworkZone: in.NetworkZone,
 	}
 	if err := s.db.Create(gw).Error; err != nil {
@@ -126,6 +182,13 @@ func (s *GatewayService) Update(id uint64, in UpdateGatewayInput) (*model.Gatewa
 			return nil, err
 		}
 		updates["admin_api"] = in.AdminAPI
+	}
+	if in.Domain != "" {
+		domain, err := normalizeGatewayDomain(in.Domain)
+		if err != nil {
+			return nil, err
+		}
+		updates["domain"] = domain
 	}
 	if in.NetworkZone != "" {
 		updates["network_zone"] = in.NetworkZone

@@ -60,8 +60,8 @@ npm run dev
 
 ### 网关管理（仅系统管理员）
 
-- 字段：网关名、Admin API、网络区域
-- 示例：`http://localhost:18001` / 网络区域 `本地`
+- 字段：网关名、Admin API、Domain（`IP:端口` 或 `域名:端口`）、网络区域
+- 示例：`http://localhost:18001` / 网络区域 `内网` 或 `DMZ`
 
 ### API 分组
 

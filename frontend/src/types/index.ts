@@ -32,6 +32,7 @@ export interface Gateway {
   id: number
   name: string
   admin_api: string
+  domain: string
   network_zone: string
 }
 
@@ -41,6 +42,7 @@ export interface ApiGroup {
   gateway_id: number
   name: string
   gateway?: Gateway
+  space?: { prefix: string }
 }
 
 export interface UpstreamTarget {

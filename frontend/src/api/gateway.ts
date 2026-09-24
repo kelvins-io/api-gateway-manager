@@ -19,7 +19,7 @@ export function probeGateway(admin_api: string) {
   return request<{ ok: boolean }>(() => http.post('/gateways/probe', { admin_api }))
 }
 
-export function createGateway(data: { name: string; admin_api: string; network_zone: string }) {
+export function createGateway(data: { name: string; admin_api: string; domain: string; network_zone: string }) {
   return request<Gateway>(() => http.post('/gateways', data))
 }
 

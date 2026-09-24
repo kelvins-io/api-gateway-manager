@@ -23,6 +23,7 @@
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="name" label="网关名" min-width="140" />
         <el-table-column prop="admin_api" label="Admin API" min-width="220" />
+        <el-table-column prop="domain" label="Domain" min-width="180" />
         <el-table-column prop="network_zone" label="网络区域" width="140" />
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
@@ -43,8 +44,13 @@
               <el-button :loading="probing" @click="onProbe">探测</el-button>
             </div>
           </el-form-item>
+          <el-form-item label="Domain" required>
+            <el-input v-model="form.domain" placeholder="10.0.0.1:8000 或 api.example.com:443" />
+          </el-form-item>
           <el-form-item label="网络区域" required>
-            <el-input v-model="form.network_zone" placeholder="如：内网 / 公网 / 本地" />
+            <el-select v-model="form.network_zone" style="width: 100%" placeholder="请选择网络区域">
+              <el-option v-for="z in networkZoneOptions" :key="z" :label="z" :value="z" />
+            </el-select>
           </el-form-item>
         </el-form>
         <template #footer>
@@ -74,7 +80,8 @@ const saving = ref(false)
 const probing = ref(false)
 const visible = ref(false)
 const editing = ref<Gateway | null>(null)
-const form = reactive({ name: '', admin_api: '', network_zone: '' })
+const networkZoneOptions = ['内网', 'DMZ'] as const
+const form = reactive({ name: '', admin_api: '', domain: '', network_zone: '' })
 
 async function load() {
   if (!allowed.value) return
@@ -90,7 +97,8 @@ function openCreate() {
   editing.value = null
   form.name = ''
   form.admin_api = 'http://localhost:8001'
-  form.network_zone = '本地'
+  form.domain = ''
+  form.network_zone = '内网'
   visible.value = true
 }
 
@@ -98,7 +106,8 @@ function openEdit(row: Gateway) {
   editing.value = row
   form.name = row.name
   form.admin_api = row.admin_api
-  form.network_zone = row.network_zone
+  form.domain = row.domain || ''
+  form.network_zone = networkZoneOptions.some((z) => z === row.network_zone) ? row.network_zone : ''
   visible.value = true
 }
 
@@ -116,9 +125,44 @@ async function onProbe() {
   }
 }
 
+function isGatewayDomain(raw: string) {
+  const value = raw.trim()
+  let host = ''
+  let portText = ''
+  if (value.startsWith('[')) {
+    const end = value.indexOf(']:')
+    if (end <= 1) return false
+    host = value.slice(1, end)
+    portText = value.slice(end + 2)
+  } else {
+    const idx = value.lastIndexOf(':')
+    if (idx <= 0 || value.indexOf(':') !== idx) return false
+    host = value.slice(0, idx)
+    portText = value.slice(idx + 1)
+  }
+  if (!/^\d+$/.test(portText)) return false
+  const port = Number(portText)
+  if (port < 1 || port > 65535) return false
+  if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(host)) {
+    return host.split('.').every((part) => {
+      if (!/^\d{1,3}$/.test(part) || (part.length > 1 && part.startsWith('0'))) return false
+      const n = Number(part)
+      return n >= 0 && n <= 255
+    })
+  }
+  if (host.includes(':')) return /^[0-9a-fA-F:]+$/.test(host) && host.includes(':')
+  if (!/[A-Za-z]/.test(host) || host.length > 253 || host.includes('..')) return false
+  return host.split('.').every((label) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label) || /^[A-Za-z0-9]$/.test(label))
+}
+
 async function save() {
-  if (!form.name || !form.admin_api || !form.network_zone) {
+  form.domain = form.domain.trim()
+  if (!form.name || !form.admin_api || !form.domain || !form.network_zone) {
     ElMessage.warning('请填写完整信息')
+    return
+  }
+  if (!isGatewayDomain(form.domain)) {
+    ElMessage.warning('Domain 须为 IP:端口 或 域名:端口，例如 10.0.0.1:8000、api.example.com:443')
     return
   }
   saving.value = true

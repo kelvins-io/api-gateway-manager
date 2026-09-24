@@ -9,19 +9,27 @@
     <el-table :data="list" v-loading="loading" stripe>
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column prop="name" label="名称" min-width="120" />
-      <el-table-column label="路径" min-width="180">
+      <el-table-column label="接入协议" width="160">
         <template #default="{ row }">
           <el-tag
-            v-for="p in splitPaths(row.access_path)"
-            :key="p"
+            v-for="proto in protocolsOf(row)"
+            :key="proto"
             size="small"
             style="margin: 2px 4px 2px 0"
           >
-            {{ p }}
+            {{ proto }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="access_methods" label="方法" width="120" />
+      <el-table-column label="接入路径" min-width="320">
+        <template #default="{ row }">
+          <div v-for="p in splitPaths(row.access_path)" :key="p" class="access-url">
+            {{ fullAccessPath(row, p) }}
+          </div>
+          <span v-if="!splitPaths(row.access_path).length">-</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="access_methods" label="接入方法" width="140" />
       <el-table-column label="上游" min-width="220">
         <template #default="{ row }">
           {{ upstreamLabel(row) }}
@@ -276,6 +284,31 @@ function applyPrefix(path: string) {
   const prefix = spacePrefix.value
   if (!prefix || path === prefix || path.startsWith(`${prefix}/`)) return path
   return `${prefix}${path}`
+}
+
+function protocolsOf(row: ApiItem): string[] {
+  const list = (row.access_protocols || 'http')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return list.length ? list : ['http']
+}
+
+function gatewayDomain(row: ApiItem): string {
+  return row.group?.gateway?.domain || ''
+}
+
+function spacePrefixOf(row: ApiItem): string {
+  return (row.group?.space?.prefix || '').replace(/\/$/, '')
+}
+
+function fullAccessPath(row: ApiItem, path: string): string {
+  let p = path.startsWith('/') ? path : `/${path}`
+  const prefix = spacePrefixOf(row)
+  if (prefix && p !== prefix && !p.startsWith(`${prefix}/`)) {
+    p = `${prefix}${p}`
+  }
+  return `${gatewayDomain(row)}${p}`
 }
 
 function splitPaths(raw: string): string[] {
@@ -577,6 +610,13 @@ onMounted(async () => {
   margin-bottom: 16px;
   display: flex;
   gap: 8px;
+}
+.access-url {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  line-height: 28px;
+  word-break: break-all;
 }
 .path-hint {
   margin-top: 6px;

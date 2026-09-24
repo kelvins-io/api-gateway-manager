@@ -57,6 +57,7 @@ type Gateway struct {
 	ID          uint64    `gorm:"primaryKey" json:"id"`
 	Name        string    `gorm:"size:128;uniqueIndex;not null" json:"name"`
 	AdminAPI    string    `gorm:"size:512;not null" json:"admin_api"`
+	Domain      string    `gorm:"size:255;not null;default:''" json:"domain"`
 	NetworkZone string    `gorm:"size:128;not null" json:"network_zone"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -71,6 +72,7 @@ type APIGroup struct {
 	UpdatedAt time.Time `json:"updated_at"`
 
 	Gateway *Gateway `gorm:"foreignKey:GatewayID" json:"gateway,omitempty"`
+	Space   *Space   `gorm:"foreignKey:SpaceID" json:"space,omitempty"`
 }
 
 type API struct {

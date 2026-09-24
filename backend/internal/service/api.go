@@ -130,7 +130,7 @@ func (s *APIService) Create(groupID uint64, in CreateAPIInput) (*model.API, erro
 
 func (s *APIService) ListByGroup(groupID uint64) ([]model.API, error) {
 	var list []model.API
-	err := s.db.Where("group_id = ?", groupID).Order("id desc").Find(&list).Error
+	err := s.db.Preload("Group").Preload("Group.Gateway").Preload("Group.Space").Where("group_id = ?", groupID).Order("id desc").Find(&list).Error
 	return list, err
 }
 
