@@ -128,34 +128,36 @@ func applyTimeout(dst *int, src *int, name string) error {
 
 func (s *APIService) snapshotOf(ctx context.Context, api *model.API) (model.APIConfigSnapshot, error) {
 	snap := model.APIConfigSnapshot{
-		Name:            api.Name,
-		Path:            api.Path,
-		Methods:         api.Methods,
-		AccessProtocols: api.AccessProtocols,
-		UpstreamURL:     api.UpstreamURL,
-		Protocol:        api.Protocol,
-		HostKind:        api.HostKind,
-		Host:            api.Host,
-		Port:            api.Port,
-		ServicePath:     api.ServicePath,
-		Retries:         api.Retries,
-		ConnectTimeout:  api.ConnectTimeout,
-		WriteTimeout:    api.WriteTimeout,
-		ReadTimeout:     api.ReadTimeout,
-		StripPath:       api.StripPath,
-		KongHost:        api.Host,
+		Name:                  api.Name,
+		AccessPath:            api.AccessPath,
+		AccessMethods:         api.AccessMethods,
+		AccessProtocols:       api.AccessProtocols,
+		AccessHosts:           api.AccessHosts,
+		AccessHeaders:         decodeHeaders(api.AccessHeaders),
+		UpstreamURL:           api.UpstreamURL,
+		ServiceProtocol:       api.ServiceProtocol,
+		ServiceHostKind:       api.ServiceHostKind,
+		ServiceHost:           api.ServiceHost,
+		ServicePort:           api.ServicePort,
+		ServicePath:           api.ServicePath,
+		ServiceRetries:        api.ServiceRetries,
+		ServiceConnectTimeout: api.ServiceConnectTimeout,
+		ServiceWriteTimeout:   api.ServiceWriteTimeout,
+		ServiceReadTimeout:    api.ServiceReadTimeout,
+		AccessStripPath:       api.AccessStripPath,
+		KongHost:              api.ServiceHost,
 	}
-	if api.UpstreamID != nil {
-		snap.UpstreamID = *api.UpstreamID
+	if api.ServiceUpstreamID != nil {
+		snap.ServiceUpstreamID = *api.ServiceUpstreamID
 	}
-	if snap.Protocol == "" && snap.Host == "" && api.UpstreamURL != "" {
+	if snap.ServiceProtocol == "" && snap.ServiceHost == "" && api.UpstreamURL != "" {
 		return snap, nil
 	}
-	if api.HostKind == model.HostKindUpstream {
-		if api.UpstreamID == nil || api.Group == nil || api.Group.Gateway == nil {
+	if api.ServiceHostKind == model.HostKindUpstream {
+		if api.ServiceUpstreamID == nil || api.Group == nil || api.Group.Gateway == nil {
 			return snap, fmt.Errorf("%w: upstream is required", ErrBadRequest)
 		}
-		kongHost, err := s.syncUpstreamGateway(ctx, *api.UpstreamID, api.Group.Gateway)
+		kongHost, err := s.syncUpstreamGateway(ctx, *api.ServiceUpstreamID, api.Group.Gateway)
 		if err != nil {
 			return snap, err
 		}

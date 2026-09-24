@@ -74,30 +74,32 @@ type APIGroup struct {
 }
 
 type API struct {
-	ID              uint64    `gorm:"primaryKey" json:"id"`
-	GroupID         uint64    `gorm:"not null;index" json:"group_id"`
-	Name            string    `gorm:"size:128;not null" json:"name"`
-	Path            string    `gorm:"size:2048;not null" json:"path"` // comma-separated, e.g. /a,/b
-	Methods         string    `gorm:"size:128;not null" json:"methods"`
-	AccessProtocols string    `gorm:"size:64;not null;default:http" json:"access_protocols"`
-	UpstreamURL     string    `gorm:"size:512" json:"upstream_url"`
-	Protocol        string    `gorm:"size:16;not null;default:http" json:"protocol"`
-	HostKind        string    `gorm:"size:16;not null;default:direct" json:"host_kind"` // direct | upstream
-	Host            string    `gorm:"size:255" json:"host"`
-	UpstreamID      *uint64   `gorm:"index" json:"upstream_id,omitempty"`
-	Port            int       `gorm:"not null;default:80" json:"port"`
-	ServicePath     string    `gorm:"size:512;not null;default:/" json:"service_path"`
-	Retries         int       `gorm:"not null;default:5" json:"retries"`
-	ConnectTimeout  int       `gorm:"not null;default:60000" json:"connect_timeout"`
-	WriteTimeout    int       `gorm:"not null;default:60000" json:"write_timeout"`
-	ReadTimeout     int       `gorm:"not null;default:60000" json:"read_timeout"`
-	StripPath       bool      `gorm:"default:true" json:"strip_path"`
-	Status          string    `gorm:"size:32;not null;default:draft" json:"status"`
-	CurrentVersion  string    `gorm:"size:32" json:"current_version"`
-	KongServiceID   string    `gorm:"size:64" json:"kong_service_id"`
-	KongRouteID     string    `gorm:"size:64" json:"kong_route_id"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID                    uint64         `gorm:"primaryKey" json:"id"`
+	GroupID               uint64         `gorm:"not null;index" json:"group_id"`
+	Name                  string         `gorm:"size:128;not null" json:"name"`
+	AccessPath            string         `gorm:"size:2048;not null" json:"access_path"`
+	AccessMethods         string         `gorm:"size:128;not null" json:"access_methods"`
+	AccessProtocols       string         `gorm:"size:64;not null;default:http" json:"access_protocols"`
+	AccessHosts           string         `gorm:"size:2048" json:"access_hosts"`
+	AccessHeaders         datatypes.JSON `gorm:"type:jsonb" json:"access_headers"`
+	UpstreamURL           string         `gorm:"size:512" json:"upstream_url"`
+	ServiceProtocol       string         `gorm:"size:16;not null;default:http" json:"service_protocol"`
+	ServiceHostKind       string         `gorm:"size:16;not null;default:direct" json:"service_host_kind"` // direct | upstream
+	ServiceHost           string         `gorm:"size:255" json:"service_host"`
+	ServiceUpstreamID     *uint64        `gorm:"index" json:"service_upstream_id,omitempty"`
+	ServicePort           int            `gorm:"not null;default:80" json:"service_port"`
+	ServicePath           string         `gorm:"size:512;not null;default:/" json:"service_path"`
+	ServiceRetries        int            `gorm:"not null;default:5" json:"service_retries"`
+	ServiceConnectTimeout int            `gorm:"not null;default:60000" json:"service_connect_timeout"`
+	ServiceWriteTimeout   int            `gorm:"not null;default:60000" json:"service_write_timeout"`
+	ServiceReadTimeout    int            `gorm:"not null;default:60000" json:"service_read_timeout"`
+	AccessStripPath       bool           `gorm:"default:true" json:"access_strip_path"`
+	Status                string         `gorm:"size:32;not null;default:draft" json:"status"`
+	CurrentVersion        string         `gorm:"size:32" json:"current_version"`
+	KongServiceID         string         `gorm:"size:64" json:"kong_service_id"`
+	KongRouteID           string         `gorm:"size:64" json:"kong_route_id"`
+	CreatedAt             time.Time      `json:"created_at"`
+	UpdatedAt             time.Time      `json:"updated_at"`
 
 	Group *APIGroup `gorm:"foreignKey:GroupID" json:"group,omitempty"`
 }
@@ -113,23 +115,109 @@ type APIVersion struct {
 
 // APIConfigSnapshot is stored in api_versions.config_snapshot
 type APIConfigSnapshot struct {
-	Name            string `json:"name"`
-	Path            string `json:"path"` // comma-separated route paths
-	Methods         string `json:"methods"`
-	AccessProtocols string `json:"access_protocols"`
-	UpstreamURL     string `json:"upstream_url,omitempty"`
-	Protocol        string `json:"protocol"`
-	HostKind        string `json:"host_kind"`
-	Host            string `json:"host"`
-	UpstreamID      uint64 `json:"upstream_id,omitempty"`
-	KongHost        string `json:"kong_host"`
-	Port            int    `json:"port"`
-	ServicePath     string `json:"service_path"`
-	Retries         int    `json:"retries"`
-	ConnectTimeout  int    `json:"connect_timeout"`
-	WriteTimeout    int    `json:"write_timeout"`
-	ReadTimeout     int    `json:"read_timeout"`
-	StripPath       bool   `json:"strip_path"`
+	Name                  string              `json:"name"`
+	AccessPath            string              `json:"access_path"`
+	AccessMethods         string              `json:"access_methods"`
+	LegacyPath            string              `json:"path,omitempty"`
+	LegacyMethods         string              `json:"methods,omitempty"`
+	AccessProtocols       string              `json:"access_protocols"`
+	AccessHosts           string              `json:"access_hosts,omitempty"`
+	AccessHeaders         map[string][]string `json:"access_headers,omitempty"`
+	UpstreamURL           string              `json:"upstream_url,omitempty"`
+	ServiceProtocol       string              `json:"service_protocol"`
+	ServiceHostKind       string              `json:"service_host_kind"`
+	ServiceHost           string              `json:"service_host"`
+	ServiceUpstreamID     uint64              `json:"service_upstream_id,omitempty"`
+	LegacyProtocol        string              `json:"protocol,omitempty"`
+	LegacyHostKind        string              `json:"host_kind,omitempty"`
+	LegacyHost            string              `json:"host,omitempty"`
+	LegacyUpstreamID      *uint64             `json:"upstream_id,omitempty"`
+	KongHost              string              `json:"kong_host"`
+	ServicePort           int                 `json:"service_port"`
+	LegacyPort            *int                `json:"port,omitempty"`
+	ServicePath           string              `json:"service_path"`
+	ServiceRetries        int                 `json:"service_retries"`
+	ServiceConnectTimeout int                 `json:"service_connect_timeout"`
+	ServiceWriteTimeout   int                 `json:"service_write_timeout"`
+	ServiceReadTimeout    int                 `json:"service_read_timeout"`
+	LegacyRetries         *int                `json:"retries,omitempty"`
+	LegacyConnectTimeout  *int                `json:"connect_timeout,omitempty"`
+	LegacyWriteTimeout    *int                `json:"write_timeout,omitempty"`
+	LegacyReadTimeout     *int                `json:"read_timeout,omitempty"`
+	AccessStripPath       bool                `json:"access_strip_path"`
+	LegacyStripPath       *bool               `json:"strip_path,omitempty"`
+}
+
+// EffectiveStripPath prefers the current field and falls back to snapshots stored as strip_path.
+func (s APIConfigSnapshot) EffectiveStripPath() bool {
+	if s.AccessStripPath {
+		return true
+	}
+	if s.LegacyStripPath != nil {
+		return *s.LegacyStripPath
+	}
+	return false
+}
+
+func (s APIConfigSnapshot) EffectiveProtocol() string {
+	if s.ServiceProtocol != "" {
+		return s.ServiceProtocol
+	}
+	return s.LegacyProtocol
+}
+
+func (s APIConfigSnapshot) EffectiveHostKind() string {
+	if s.ServiceHostKind != "" {
+		return s.ServiceHostKind
+	}
+	return s.LegacyHostKind
+}
+
+func (s APIConfigSnapshot) EffectiveHost() string {
+	if s.ServiceHost != "" {
+		return s.ServiceHost
+	}
+	return s.LegacyHost
+}
+
+func (s APIConfigSnapshot) EffectiveUpstreamID() uint64 {
+	if s.ServiceUpstreamID != 0 {
+		return s.ServiceUpstreamID
+	}
+	if s.LegacyUpstreamID != nil {
+		return *s.LegacyUpstreamID
+	}
+	return 0
+}
+
+func (s APIConfigSnapshot) EffectivePort() int {
+	return firstInt(s.ServicePort, s.LegacyPort)
+}
+
+func (s APIConfigSnapshot) EffectiveRetries() int {
+	return firstInt(s.ServiceRetries, s.LegacyRetries)
+}
+
+func (s APIConfigSnapshot) EffectiveConnectTimeout() int {
+	return firstInt(s.ServiceConnectTimeout, s.LegacyConnectTimeout)
+}
+
+func (s APIConfigSnapshot) EffectiveWriteTimeout() int {
+	return firstInt(s.ServiceWriteTimeout, s.LegacyWriteTimeout)
+}
+
+func (s APIConfigSnapshot) EffectiveReadTimeout() int {
+	return firstInt(s.ServiceReadTimeout, s.LegacyReadTimeout)
+}
+
+func firstInt(current int, legacy *int) int {
+	if current != 0 {
+		return current
+	}
+	if legacy != nil {
+		return *legacy
+	}
+	return 0
 }
 
 type Upstream struct {

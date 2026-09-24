@@ -81,8 +81,8 @@ func (c *Client) Publish(ctx context.Context, apiID uint64, snap model.APIConfig
 		return nil, fmt.Errorf("kong service upsert: %w", err)
 	}
 
-	methods := splitMethods(snap.Methods)
-	paths := model.SplitPaths(snap.Path)
+	methods := splitMethods(firstNonEmpty(snap.AccessMethods, snap.LegacyMethods))
+	paths := model.SplitPaths(firstNonEmpty(snap.AccessPath, snap.LegacyPath))
 	if len(paths) == 0 {
 		return nil, fmt.Errorf("at least one path is required")
 	}
@@ -92,9 +92,15 @@ func (c *Client) Publish(ctx context.Context, apiID uint64, snap model.APIConfig
 		Paths:     kong.StringSlice(paths...),
 		Methods:   kong.StringSlice(methods...),
 		Protocols: kong.StringSlice(accessProtocols(snap.AccessProtocols)...),
-		StripPath: kong.Bool(snap.StripPath),
+		StripPath: kong.Bool(snap.EffectiveStripPath()),
 		Service:   &kong.Service{ID: service.ID},
 		Tags:      kong.StringSlice(fmt.Sprintf("agm-api-%d", apiID)),
+	}
+	if hosts := splitAccessHosts(snap.AccessHosts); len(hosts) > 0 {
+		route.Hosts = kong.StringSlice(hosts...)
+	}
+	if len(snap.AccessHeaders) > 0 {
+		route.Headers = snap.AccessHeaders
 	}
 
 	var createdRoute *kong.Route
@@ -134,6 +140,29 @@ func (c *Client) Offline(ctx context.Context, serviceID, routeID string) error {
 		}
 	}
 	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func splitAccessHosts(raw string) []string {
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == ';'
+	})
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func accessProtocols(raw string) []string {
@@ -208,22 +237,22 @@ func parseUpstream(raw string) (host string, port int, path string, protocol str
 }
 
 func serviceFields(snap model.APIConfigSnapshot) (host string, port int, path, protocol string, retries, connTimeout, writeTimeout, readTimeout int, err error) {
-	if snap.Protocol == "" && snap.KongHost == "" && snap.Host == "" {
+	if snap.EffectiveProtocol() == "" && snap.KongHost == "" && snap.EffectiveHost() == "" {
 		host, port, path, protocol, err = parseUpstream(snap.UpstreamURL)
 		if err != nil {
 			return
 		}
 		return host, port, path, protocol, 5, 60000, 60000, 60000, nil
 	}
-	protocol = snap.Protocol
+	protocol = snap.EffectiveProtocol()
 	if protocol == "" {
 		protocol = "http"
 	}
 	host = snap.KongHost
 	if host == "" {
-		host = snap.Host
+		host = snap.EffectiveHost()
 	}
-	port = snap.Port
+	port = snap.EffectivePort()
 	if port == 0 {
 		port = 80
 	}
@@ -231,10 +260,10 @@ func serviceFields(snap model.APIConfigSnapshot) (host string, port int, path, p
 	if path == "" {
 		path = "/"
 	}
-	retries = snap.Retries
-	connTimeout = snap.ConnectTimeout
-	writeTimeout = snap.WriteTimeout
-	readTimeout = snap.ReadTimeout
+	retries = snap.EffectiveRetries()
+	connTimeout = snap.EffectiveConnectTimeout()
+	writeTimeout = snap.EffectiveWriteTimeout()
+	readTimeout = snap.EffectiveReadTimeout()
 	if host == "" {
 		err = fmt.Errorf("service host is empty")
 	}

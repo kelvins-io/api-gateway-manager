@@ -12,7 +12,7 @@
       <el-table-column label="路径" min-width="180">
         <template #default="{ row }">
           <el-tag
-            v-for="p in splitPaths(row.path)"
+            v-for="p in splitPaths(row.access_path)"
             :key="p"
             size="small"
             style="margin: 2px 4px 2px 0"
@@ -21,7 +21,7 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="methods" label="方法" width="120" />
+      <el-table-column prop="access_methods" label="方法" width="120" />
       <el-table-column label="上游" min-width="220">
         <template #default="{ row }">
           {{ upstreamLabel(row) }}
@@ -45,11 +45,11 @@
     </el-table>
 
     <el-dialog v-model="visible" :title="editing ? '编辑 API' : '新建 API'" width="560px">
-      <el-form :model="form" label-width="100px">
+      <el-form :model="form" label-width="120px">
         <el-form-item label="名称">
           <el-input v-model="form.name" />
         </el-form-item>
-        <el-form-item label="路径">
+        <el-form-item label="接入路径">
           <el-select
             v-model="form.pathList"
             multiple
@@ -64,7 +64,7 @@
             <template v-if="previewPaths.length">，结果：{{ previewPaths.join('、') }}</template>
           </div>
         </el-form-item>
-        <el-form-item label="方法">
+        <el-form-item label="接入方法">
           <el-select v-model="form.methodList" multiple style="width: 100%">
             <el-option v-for="m in methodOptions" :key="m" :label="m" :value="m" />
           </el-select>
@@ -74,49 +74,69 @@
             <el-option v-for="p in protocolOptions" :key="p" :label="p" :value="p" />
           </el-select>
         </el-form-item>
+        <el-form-item label="接入 Hosts">
+          <el-select
+            v-model="form.accessHostList"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            style="width: 100%"
+            placeholder="可选，输入域名后回车，如 example.com"
+          />
+        </el-form-item>
+        <el-form-item label="接入 Headers">
+          <div v-for="(h, i) in form.headerList" :key="i" class="header-row">
+            <el-input v-model="h.name" placeholder="Header 名" />
+            <el-input v-model="h.value" placeholder="值，多个用逗号分隔" />
+            <el-button link type="danger" @click="form.headerList.splice(i, 1)">删除</el-button>
+          </div>
+          <el-button link type="primary" @click="form.headerList.push({ name: '', value: '' })">添加 Header</el-button>
+        </el-form-item>
+        <el-form-item label="接入 Strip Path">
+          <el-switch v-model="form.access_strip_path" />
+        </el-form-item>
+        <el-divider />
         <el-form-item label="后端服务协议">
-          <el-select v-model="form.protocol" style="width: 100%">
+          <el-select v-model="form.service_protocol" style="width: 100%">
             <el-option v-for="p in protocolOptions" :key="p" :label="p" :value="p" />
           </el-select>
         </el-form-item>
-        <el-form-item label="主机">
-          <el-radio-group v-model="form.host_kind" style="margin-bottom: 8px">
+        <el-form-item label="后端服务主机">
+          <el-radio-group v-model="form.service_host_kind" style="margin-bottom: 8px">
             <el-radio value="direct">IP / 域名</el-radio>
             <el-radio value="upstream">Upstream</el-radio>
           </el-radio-group>
-          <el-input v-if="form.host_kind === 'direct'" v-model="form.host" placeholder="127.0.0.1 或 example.com" />
-          <el-select v-else v-model="form.upstream_id" filterable style="width: 100%" placeholder="选择本空间 Upstream">
+          <el-input v-if="form.service_host_kind === 'direct'" v-model="form.service_host" placeholder="127.0.0.1 或 example.com" />
+          <el-select v-else v-model="form.service_upstream_id" filterable style="width: 100%" placeholder="选择本空间 Upstream">
             <el-option v-for="u in upstreams" :key="u.id" :label="u.name" :value="u.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="端口">
-          <el-input-number v-model="form.port" :min="80" :max="65535" :step="1" />
+        <el-form-item label="后端服务端口">
+          <el-input-number v-model="form.service_port" :min="80" :max="65535" :step="1" />
         </el-form-item>
-        <el-form-item label="Service Path">
+        <el-form-item label="后端服务Path">
           <el-input v-model="form.service_path" placeholder="/" />
         </el-form-item>
         <el-collapse>
-          <el-collapse-item title="重试与超时" name="advanced">
+          <el-collapse-item title="后端服务重试与超时" name="advanced">
             <el-form-item label="Retries">
-              <el-input-number v-model="form.retries" :min="0" :step="1" />
+              <el-input-number v-model="form.service_retries" :min="0" :step="1" />
             </el-form-item>
             <el-form-item label="连接超时">
-              <el-input-number v-model="form.connect_timeout" :min="0" :step="1000" />
+              <el-input-number v-model="form.service_connect_timeout" :min="0" :step="1000" />
               <span class="unit">毫秒</span>
             </el-form-item>
             <el-form-item label="写超时">
-              <el-input-number v-model="form.write_timeout" :min="0" :step="1000" />
+              <el-input-number v-model="form.service_write_timeout" :min="0" :step="1000" />
               <span class="unit">毫秒</span>
             </el-form-item>
             <el-form-item label="读超时">
-              <el-input-number v-model="form.read_timeout" :min="0" :step="1000" />
+              <el-input-number v-model="form.service_read_timeout" :min="0" :step="1000" />
               <span class="unit">毫秒</span>
             </el-form-item>
           </el-collapse-item>
         </el-collapse>
-        <el-form-item label="Strip Path">
-          <el-switch v-model="form.strip_path" />
-        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="visible = false">取消</el-button>
@@ -156,28 +176,30 @@
         <el-descriptions-item label="版本">{{ detailVersion?.version }}</el-descriptions-item>
         <el-descriptions-item label="发布时间">{{ formatTime(detailVersion?.published_at || '') }}</el-descriptions-item>
         <el-descriptions-item label="名称">{{ detailSnap.name || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="路径">
+        <el-descriptions-item label="接入路径">
           <el-tag
-            v-for="p in splitPaths(detailSnap.path)"
+            v-for="p in splitPaths(detailSnap.access_path)"
             :key="p"
             size="small"
             style="margin: 2px 4px 2px 0"
           >
             {{ p }}
           </el-tag>
-          <span v-if="!splitPaths(detailSnap.path).length">-</span>
+          <span v-if="!splitPaths(detailSnap.access_path).length">-</span>
         </el-descriptions-item>
-        <el-descriptions-item label="方法">{{ detailSnap.methods || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="接入方法">{{ detailSnap.access_methods || '-' }}</el-descriptions-item>
         <el-descriptions-item label="接入协议">{{ detailSnap.access_protocols || 'http' }}</el-descriptions-item>
-        <el-descriptions-item label="后端服务协议">{{ detailSnap.protocol || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="主机">{{ detailSnap.kong_host || detailSnap.host || detailSnap.upstream_url || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="端口">{{ detailSnap.port || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="Service Path">{{ detailSnap.service_path || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="Retries">{{ detailSnap.retries ?? '-' }}</el-descriptions-item>
-        <el-descriptions-item label="连接超时">{{ detailSnap.connect_timeout ?? '-' }} ms</el-descriptions-item>
-        <el-descriptions-item label="写超时">{{ detailSnap.write_timeout ?? '-' }} ms</el-descriptions-item>
-        <el-descriptions-item label="读超时">{{ detailSnap.read_timeout ?? '-' }} ms</el-descriptions-item>
-        <el-descriptions-item label="Strip Path">{{ detailSnap.strip_path ? '开启' : '关闭' }}</el-descriptions-item>
+        <el-descriptions-item label="接入 Hosts">{{ detailSnap.access_hosts || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="接入 Headers">{{ formatHeaders(detailSnap.access_headers) }}</el-descriptions-item>
+        <el-descriptions-item label="接入 Strip Path">{{ detailSnap.access_strip_path ? '开启' : '关闭' }}</el-descriptions-item>
+        <el-descriptions-item label="后端服务协议">{{ detailSnap.service_protocol || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="后端服务主机">{{ detailSnap.kong_host || detailSnap.service_host || detailSnap.upstream_url || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="后端服务端口">{{ detailSnap.service_port || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="后端服务Path">{{ detailSnap.service_path || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="后端服务Retries">{{ detailSnap.service_retries ?? '-' }}</el-descriptions-item>
+        <el-descriptions-item label="后端服务连接超时">{{ detailSnap.service_connect_timeout ?? '-' }} ms</el-descriptions-item>
+        <el-descriptions-item label="后端服务写超时">{{ detailSnap.service_write_timeout ?? '-' }} ms</el-descriptions-item>
+        <el-descriptions-item label="后端服务读超时">{{ detailSnap.service_read_timeout ?? '-' }} ms</el-descriptions-item>
       </el-descriptions>
       <el-empty v-else description="无法解析该版本配置" />
     </el-dialog>
@@ -216,17 +238,19 @@ const form = reactive({
   pathList: ['/api/demo'] as string[],
   methodList: ['GET'] as string[],
   accessProtocolList: ['http'] as string[],
-  protocol: 'http',
-  host_kind: 'direct',
-  host: '',
-  upstream_id: undefined as number | undefined,
-  port: 80,
+  accessHostList: [] as string[],
+  headerList: [] as { name: string; value: string }[],
+  service_protocol: 'http',
+  service_host_kind: 'direct',
+  service_host: '',
+  service_upstream_id: undefined as number | undefined,
+  service_port: 80,
   service_path: '/',
-  retries: 5,
-  connect_timeout: 60000,
-  write_timeout: 60000,
-  read_timeout: 60000,
-  strip_path: true,
+  service_retries: 5,
+  service_connect_timeout: 60000,
+  service_write_timeout: 60000,
+  service_read_timeout: 60000,
+  access_strip_path: true,
 })
 
 const pathPlaceholder = computed(() =>
@@ -270,20 +294,22 @@ function statusType(s: string) {
 
 interface VersionSnapshot {
   name: string
-  path: string
-  methods: string
+  access_path: string
+  access_methods: string
   access_protocols: string
+  access_hosts: string
+  access_headers: Record<string, string[]>
   upstream_url: string
-  protocol: string
-  host: string
+  service_protocol: string
+  service_host: string
   kong_host: string
-  port: number
+  service_port: number
   service_path: string
-  retries: number
-  connect_timeout: number
-  write_timeout: number
-  read_timeout: number
-  strip_path: boolean
+  service_retries: number
+  service_connect_timeout: number
+  service_write_timeout: number
+  service_read_timeout: number
+  access_strip_path: boolean
 }
 
 const detailSnap = computed(() =>
@@ -298,20 +324,24 @@ function parseSnapshot(snap: Record<string, unknown> | string): VersionSnapshot 
     const obj = (typeof snap === 'string' ? JSON.parse(snap) : snap) as Record<string, unknown>
     return {
       name: String(obj.name || ''),
-      path: String(obj.path || ''),
-      methods: String(obj.methods || ''),
+      access_path: String(obj.access_path || obj.path || ''),
+      access_methods: String(obj.access_methods || obj.methods || ''),
       access_protocols: String(obj.access_protocols || ''),
+      access_hosts: String(obj.access_hosts || ''),
+      access_headers: (obj.access_headers && typeof obj.access_headers === 'object'
+        ? obj.access_headers
+        : {}) as Record<string, string[]>,
       upstream_url: String(obj.upstream_url || ''),
-      protocol: String(obj.protocol || ''),
-      host: String(obj.host || ''),
+      service_protocol: String(obj.service_protocol || obj.protocol || ''),
+      service_host: String(obj.service_host || obj.host || ''),
       kong_host: String(obj.kong_host || ''),
-      port: Number(obj.port || 0),
+      service_port: Number(obj.service_port || obj.port || 0),
       service_path: String(obj.service_path || ''),
-      retries: Number(obj.retries ?? 0),
-      connect_timeout: Number(obj.connect_timeout ?? 0),
-      write_timeout: Number(obj.write_timeout ?? 0),
-      read_timeout: Number(obj.read_timeout ?? 0),
-      strip_path: Boolean(obj.strip_path),
+      service_retries: Number(obj.service_retries ?? obj.retries ?? 0),
+      service_connect_timeout: Number(obj.service_connect_timeout ?? obj.connect_timeout ?? 0),
+      service_write_timeout: Number(obj.service_write_timeout ?? obj.write_timeout ?? 0),
+      service_read_timeout: Number(obj.service_read_timeout ?? obj.read_timeout ?? 0),
+      access_strip_path: readStripPath(obj),
     }
   } catch {
     return null
@@ -321,28 +351,62 @@ function parseSnapshot(snap: Record<string, unknown> | string): VersionSnapshot 
 function summarize(snap: Record<string, unknown> | string) {
   const obj = parseSnapshot(snap)
   if (!obj) return String(snap)
-  const dest = obj.kong_host || obj.host || obj.upstream_url
-  return `${obj.methods} ${obj.path} -> ${obj.protocol}://${dest}:${obj.port}${obj.service_path}`
+  const dest = obj.kong_host || obj.service_host || obj.upstream_url
+  return `${obj.access_methods} ${obj.access_path} -> ${obj.service_protocol}://${dest}:${obj.service_port}${obj.service_path}`
+}
+
+function readStripPath(obj: Record<string, unknown>) {
+  if (typeof obj.access_strip_path === 'boolean') return obj.access_strip_path
+  if (typeof obj.strip_path === 'boolean') return obj.strip_path
+  return true
+}
+
+function formatHeaders(headers?: Record<string, string[]>) {
+  const entries = Object.entries(headers || {}).filter(([name]) => name)
+  if (!entries.length) return '-'
+  return entries.map(([name, values]) => `${name}: ${(values || []).join(',')}`).join('；')
+}
+
+function headersToRows(headers?: Record<string, string[]>) {
+  return Object.entries(headers || {}).map(([name, values]) => ({
+    name,
+    value: (values || []).join(','),
+  }))
+}
+
+function rowsToHeaders(rows: { name: string; value: string }[]) {
+  const out: Record<string, string[]> = {}
+  for (const row of rows) {
+    const name = row.name.trim()
+    if (!name) continue
+    const values = row.value
+      .split(/[,，]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (!values.length) continue
+    out[name] = [...(out[name] || []), ...values]
+  }
+  return out
 }
 
 function upstreamLabel(row: ApiItem) {
-  if (row.host) {
-    return `${row.protocol || 'http'}://${row.host}:${row.port}${row.service_path || '/'}`
+  if (row.service_host) {
+    return `${row.service_protocol || 'http'}://${row.service_host}:${row.service_port}${row.service_path || '/'}`
   }
   return row.upstream_url || '-'
 }
 
 function resetService() {
-  form.protocol = 'http'
-  form.host_kind = 'direct'
-  form.host = 'httpbin.org'
-  form.upstream_id = undefined
-  form.port = 80
+  form.service_protocol = 'http'
+  form.service_host_kind = 'direct'
+  form.service_host = 'httpbin.org'
+  form.service_upstream_id = undefined
+  form.service_port = 80
   form.service_path = '/'
-  form.retries = 5
-  form.connect_timeout = 60000
-  form.write_timeout = 60000
-  form.read_timeout = 60000
+  form.service_retries = 5
+  form.service_connect_timeout = 60000
+  form.service_write_timeout = 60000
+  form.service_read_timeout = 60000
 }
 
 function formatTime(raw: string) {
@@ -373,28 +437,32 @@ function openCreate() {
   form.pathList = ['/api/demo']
   form.methodList = ['GET']
   form.accessProtocolList = ['http']
+  form.accessHostList = []
+  form.headerList = []
   resetService()
-  form.strip_path = true
+  form.access_strip_path = true
   visible.value = true
 }
 
 function openEdit(row: ApiItem) {
   editing.value = row
   form.name = row.name
-  form.pathList = splitPaths(row.path)
-  form.methodList = row.methods.split(',').map((s) => s.trim()).filter(Boolean)
+  form.pathList = splitPaths(row.access_path)
+  form.methodList = row.access_methods.split(',').map((s) => s.trim()).filter(Boolean)
   form.accessProtocolList = (row.access_protocols || 'http').split(',').map((s) => s.trim()).filter(Boolean)
-  form.protocol = row.protocol || 'http'
-  form.host_kind = row.host_kind || 'direct'
-  form.host = row.host || ''
-  form.upstream_id = row.upstream_id
-  form.port = row.port || 80
+  form.accessHostList = (row.access_hosts || '').split(/[,;\n]/).map((s) => s.trim()).filter(Boolean)
+  form.headerList = headersToRows(row.access_headers)
+  form.service_protocol = row.service_protocol || 'http'
+  form.service_host_kind = row.service_host_kind || 'direct'
+  form.service_host = row.service_host || ''
+  form.service_upstream_id = row.service_upstream_id
+  form.service_port = row.service_port || 80
   form.service_path = row.service_path || '/'
-  form.retries = row.retries ?? 5
-  form.connect_timeout = row.connect_timeout ?? 60000
-  form.write_timeout = row.write_timeout ?? 60000
-  form.read_timeout = row.read_timeout ?? 60000
-  form.strip_path = row.strip_path
+  form.service_retries = row.service_retries ?? 5
+  form.service_connect_timeout = row.service_connect_timeout ?? 60000
+  form.service_write_timeout = row.service_write_timeout ?? 60000
+  form.service_read_timeout = row.service_read_timeout ?? 60000
+  form.access_strip_path = row.access_strip_path
   visible.value = true
 }
 
@@ -403,16 +471,16 @@ async function save() {
     ElMessage.warning('请填写完整信息')
     return
   }
-  if (form.host_kind === 'direct' && !form.host.trim()) {
-    ElMessage.warning('请填写主机')
+  if (form.service_host_kind === 'direct' && !form.service_host.trim()) {
+    ElMessage.warning('请填写后端服务主机')
     return
   }
-  if (form.host_kind === 'upstream' && !form.upstream_id) {
+  if (form.service_host_kind === 'upstream' && !form.service_upstream_id) {
     ElMessage.warning('请选择 Upstream')
     return
   }
   if (!form.service_path.startsWith('/') || /[,;\n]/.test(form.service_path)) {
-    ElMessage.warning('Service Path 只能填一个，且以 / 开头')
+    ElMessage.warning('后端服务Path 只能填一个，且以 / 开头')
     return
   }
   const paths = form.pathList.map((p) => normalizePath(p)).filter(Boolean)
@@ -422,20 +490,22 @@ async function save() {
   }
   const payload = {
     name: form.name,
-    path: paths.join(','),
-    methods: form.methodList.join(','),
+    access_path: paths.join(','),
+    access_methods: form.methodList.join(','),
     access_protocols: form.accessProtocolList.join(','),
-    protocol: form.protocol,
-    host_kind: form.host_kind,
-    host: form.host_kind === 'direct' ? form.host.trim() : '',
-    upstream_id: form.host_kind === 'upstream' ? form.upstream_id : undefined,
-    port: form.port,
+    access_hosts: form.accessHostList.map((h) => h.trim()).filter(Boolean).join(','),
+    access_headers: rowsToHeaders(form.headerList),
+    service_protocol: form.service_protocol,
+    service_host_kind: form.service_host_kind,
+    service_host: form.service_host_kind === 'direct' ? form.service_host.trim() : '',
+    service_upstream_id: form.service_host_kind === 'upstream' ? form.service_upstream_id : undefined,
+    service_port: form.service_port,
     service_path: form.service_path,
-    retries: form.retries,
-    connect_timeout: form.connect_timeout,
-    write_timeout: form.write_timeout,
-    read_timeout: form.read_timeout,
-    strip_path: form.strip_path,
+    service_retries: form.service_retries,
+    service_connect_timeout: form.service_connect_timeout,
+    service_write_timeout: form.service_write_timeout,
+    service_read_timeout: form.service_read_timeout,
+    access_strip_path: form.access_strip_path,
   }
   saving.value = true
   try {
@@ -517,5 +587,11 @@ onMounted(async () => {
 .unit {
   margin-left: 8px;
   color: #909399;
+}
+.header-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  width: 100%;
 }
 </style>

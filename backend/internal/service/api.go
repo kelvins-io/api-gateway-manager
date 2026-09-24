@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -24,39 +25,43 @@ func NewAPIService(db *gorm.DB) *APIService {
 }
 
 type CreateAPIInput struct {
-	Name            string  `json:"name" binding:"required,min=1,max=128"`
-	Path            string  `json:"path" binding:"required,min=1,max=2048"`
-	Methods         string  `json:"methods" binding:"required"`
-	AccessProtocols string  `json:"access_protocols"`
-	Protocol        string  `json:"protocol"`
-	HostKind        string  `json:"host_kind"`
-	Host            string  `json:"host"`
-	UpstreamID      *uint64 `json:"upstream_id"`
-	Port            int     `json:"port"`
-	ServicePath     string  `json:"service_path"`
-	Retries         *int    `json:"retries"`
-	ConnectTimeout  *int    `json:"connect_timeout"`
-	WriteTimeout    *int    `json:"write_timeout"`
-	ReadTimeout     *int    `json:"read_timeout"`
-	StripPath       *bool   `json:"strip_path"`
+	Name                  string              `json:"name" binding:"required,min=1,max=128"`
+	AccessPath            string              `json:"access_path" binding:"required,min=1,max=2048"`
+	AccessMethods         string              `json:"access_methods" binding:"required"`
+	AccessProtocols       string              `json:"access_protocols"`
+	AccessHosts           string              `json:"access_hosts"`
+	AccessHeaders         map[string][]string `json:"access_headers"`
+	ServiceProtocol       string              `json:"service_protocol"`
+	ServiceHostKind       string              `json:"service_host_kind"`
+	ServiceHost           string              `json:"service_host"`
+	ServiceUpstreamID     *uint64             `json:"service_upstream_id"`
+	ServicePort           int                 `json:"service_port"`
+	ServicePath           string              `json:"service_path"`
+	ServiceRetries        *int                `json:"service_retries"`
+	ServiceConnectTimeout *int                `json:"service_connect_timeout"`
+	ServiceWriteTimeout   *int                `json:"service_write_timeout"`
+	ServiceReadTimeout    *int                `json:"service_read_timeout"`
+	AccessStripPath       *bool               `json:"access_strip_path"`
 }
 
 type UpdateAPIInput struct {
-	Name            string  `json:"name" binding:"omitempty,min=1,max=128"`
-	Path            string  `json:"path" binding:"omitempty,min=1,max=2048"`
-	Methods         string  `json:"methods"`
-	AccessProtocols string  `json:"access_protocols"`
-	Protocol        string  `json:"protocol"`
-	HostKind        string  `json:"host_kind"`
-	Host            string  `json:"host"`
-	UpstreamID      *uint64 `json:"upstream_id"`
-	Port            *int    `json:"port"`
-	ServicePath     string  `json:"service_path"`
-	Retries         *int    `json:"retries"`
-	ConnectTimeout  *int    `json:"connect_timeout"`
-	WriteTimeout    *int    `json:"write_timeout"`
-	ReadTimeout     *int    `json:"read_timeout"`
-	StripPath       *bool   `json:"strip_path"`
+	Name                  string              `json:"name" binding:"omitempty,min=1,max=128"`
+	AccessPath            string              `json:"access_path" binding:"omitempty,min=1,max=2048"`
+	AccessMethods         string              `json:"access_methods"`
+	AccessProtocols       string              `json:"access_protocols"`
+	AccessHosts           string              `json:"access_hosts"`
+	AccessHeaders         map[string][]string `json:"access_headers"`
+	ServiceProtocol       string              `json:"service_protocol"`
+	ServiceHostKind       string              `json:"service_host_kind"`
+	ServiceHost           string              `json:"service_host"`
+	ServiceUpstreamID     *uint64             `json:"service_upstream_id"`
+	ServicePort           *int                `json:"service_port"`
+	ServicePath           string              `json:"service_path"`
+	ServiceRetries        *int                `json:"service_retries"`
+	ServiceConnectTimeout *int                `json:"service_connect_timeout"`
+	ServiceWriteTimeout   *int                `json:"service_write_timeout"`
+	ServiceReadTimeout    *int                `json:"service_read_timeout"`
+	AccessStripPath       *bool               `json:"access_strip_path"`
 }
 
 type SwitchVersionInput struct {
@@ -69,10 +74,10 @@ func (s *APIService) Create(groupID uint64, in CreateAPIInput) (*model.API, erro
 		return nil, err
 	}
 	strip := true
-	if in.StripPath != nil {
-		strip = *in.StripPath
+	if in.AccessStripPath != nil {
+		strip = *in.AccessStripPath
 	}
-	paths := model.SplitPaths(in.Path)
+	paths := model.SplitPaths(in.AccessPath)
 	if len(paths) == 0 {
 		return nil, fmt.Errorf("%w: at least one path is required", ErrBadRequest)
 	}
@@ -80,32 +85,42 @@ func (s *APIService) Create(groupID uint64, in CreateAPIInput) (*model.API, erro
 	if err != nil {
 		return nil, err
 	}
+	accessHosts, err := normalizeAccessHosts(in.AccessHosts)
+	if err != nil {
+		return nil, err
+	}
+	accessHeaders, err := normalizeAccessHeaders(in.AccessHeaders)
+	if err != nil {
+		return nil, err
+	}
 	svcFields, err := s.normalizeService(group.SpaceID, serviceInput{
-		Protocol: in.Protocol, HostKind: in.HostKind, Host: in.Host, UpstreamID: in.UpstreamID,
-		Port: in.Port, ServicePath: in.ServicePath, Retries: in.Retries,
-		ConnectTimeout: in.ConnectTimeout, WriteTimeout: in.WriteTimeout, ReadTimeout: in.ReadTimeout,
+		Protocol: in.ServiceProtocol, HostKind: in.ServiceHostKind, Host: in.ServiceHost, UpstreamID: in.ServiceUpstreamID,
+		Port: in.ServicePort, ServicePath: in.ServicePath, Retries: in.ServiceRetries,
+		ConnectTimeout: in.ServiceConnectTimeout, WriteTimeout: in.ServiceWriteTimeout, ReadTimeout: in.ServiceReadTimeout,
 	}, true)
 	if err != nil {
 		return nil, err
 	}
 	api := &model.API{
-		GroupID:         groupID,
-		Name:            in.Name,
-		Path:            strings.Join(paths, ","),
-		Methods:         normalizeMethods(in.Methods),
-		AccessProtocols: normalizeAccessProtocols(in.AccessProtocols),
-		Protocol:        svcFields.Protocol,
-		HostKind:        svcFields.HostKind,
-		Host:            svcFields.Host,
-		UpstreamID:      svcFields.UpstreamID,
-		Port:            svcFields.Port,
-		ServicePath:     svcFields.ServicePath,
-		Retries:         svcFields.Retries,
-		ConnectTimeout:  svcFields.ConnectTimeout,
-		WriteTimeout:    svcFields.WriteTimeout,
-		ReadTimeout:     svcFields.ReadTimeout,
-		StripPath:       strip,
-		Status:          model.APIStatusDraft,
+		GroupID:               groupID,
+		Name:                  in.Name,
+		AccessPath:            strings.Join(paths, ","),
+		AccessMethods:         normalizeMethods(in.AccessMethods),
+		AccessProtocols:       normalizeAccessProtocols(in.AccessProtocols),
+		AccessHosts:           accessHosts,
+		AccessHeaders:         accessHeaders,
+		ServiceProtocol:       svcFields.Protocol,
+		ServiceHostKind:       svcFields.HostKind,
+		ServiceHost:           svcFields.Host,
+		ServiceUpstreamID:     svcFields.UpstreamID,
+		ServicePort:           svcFields.Port,
+		ServicePath:           svcFields.ServicePath,
+		ServiceRetries:        svcFields.Retries,
+		ServiceConnectTimeout: svcFields.ConnectTimeout,
+		ServiceWriteTimeout:   svcFields.WriteTimeout,
+		ServiceReadTimeout:    svcFields.ReadTimeout,
+		AccessStripPath:       strip,
+		Status:                model.APIStatusDraft,
 	}
 	if err := s.db.Create(api).Error; err != nil {
 		return nil, err
@@ -139,8 +154,8 @@ func (s *APIService) Update(id uint64, in UpdateAPIInput) (*model.API, error) {
 	if in.Name != "" {
 		updates["name"] = in.Name
 	}
-	if in.Path != "" {
-		paths := model.SplitPaths(in.Path)
+	if in.AccessPath != "" {
+		paths := model.SplitPaths(in.AccessPath)
 		if len(paths) == 0 {
 			return nil, fmt.Errorf("%w: at least one path is required", ErrBadRequest)
 		}
@@ -151,53 +166,63 @@ func (s *APIService) Update(id uint64, in UpdateAPIInput) (*model.API, error) {
 		if err != nil {
 			return nil, err
 		}
-		updates["path"] = strings.Join(paths, ",")
+		updates["access_path"] = strings.Join(paths, ",")
 	}
-	if in.Methods != "" {
-		updates["methods"] = normalizeMethods(in.Methods)
+	if in.AccessMethods != "" {
+		updates["access_methods"] = normalizeMethods(in.AccessMethods)
 	}
 	if in.AccessProtocols != "" {
 		updates["access_protocols"] = normalizeAccessProtocols(in.AccessProtocols)
 	}
-	if in.Protocol != "" || in.HostKind != "" || in.Host != "" || in.UpstreamID != nil || in.Port != nil || in.ServicePath != "" || in.Retries != nil || in.ConnectTimeout != nil || in.WriteTimeout != nil || in.ReadTimeout != nil {
-		port := api.Port
-		if in.Port != nil {
-			port = *in.Port
+	hosts, err := normalizeAccessHosts(in.AccessHosts)
+	if err != nil {
+		return nil, err
+	}
+	headers, err := normalizeAccessHeaders(in.AccessHeaders)
+	if err != nil {
+		return nil, err
+	}
+	updates["access_hosts"] = hosts
+	updates["access_headers"] = headers
+	if in.ServiceProtocol != "" || in.ServiceHostKind != "" || in.ServiceHost != "" || in.ServiceUpstreamID != nil || in.ServicePort != nil || in.ServicePath != "" || in.ServiceRetries != nil || in.ServiceConnectTimeout != nil || in.ServiceWriteTimeout != nil || in.ServiceReadTimeout != nil {
+		port := api.ServicePort
+		if in.ServicePort != nil {
+			port = *in.ServicePort
 		}
 		svcFields, err := s.normalizeService(api.Group.SpaceID, serviceInput{
-			Protocol: in.Protocol, HostKind: in.HostKind, Host: in.Host, UpstreamID: in.UpstreamID,
-			Port: port, ServicePath: in.ServicePath, Retries: in.Retries,
-			ConnectTimeout: in.ConnectTimeout, WriteTimeout: in.WriteTimeout, ReadTimeout: in.ReadTimeout,
+			Protocol: in.ServiceProtocol, HostKind: in.ServiceHostKind, Host: in.ServiceHost, UpstreamID: in.ServiceUpstreamID,
+			Port: port, ServicePath: in.ServicePath, Retries: in.ServiceRetries,
+			ConnectTimeout: in.ServiceConnectTimeout, WriteTimeout: in.ServiceWriteTimeout, ReadTimeout: in.ServiceReadTimeout,
 		}, false)
 		if err != nil {
 			return nil, err
 		}
 		if svcFields.Protocol == "" {
-			svcFields.Protocol = api.Protocol
+			svcFields.Protocol = api.ServiceProtocol
 		}
 		if svcFields.HostKind == "" {
-			svcFields.HostKind = api.HostKind
+			svcFields.HostKind = api.ServiceHostKind
 		}
 		if svcFields.ServicePath == "" {
 			svcFields.ServicePath = api.ServicePath
 		}
-		updates["protocol"] = svcFields.Protocol
-		updates["host_kind"] = svcFields.HostKind
-		updates["host"] = svcFields.Host
+		updates["service_protocol"] = svcFields.Protocol
+		updates["service_host_kind"] = svcFields.HostKind
+		updates["service_host"] = svcFields.Host
 		if svcFields.UpstreamID == nil {
-			updates["upstream_id"] = gorm.Expr("NULL")
+			updates["service_upstream_id"] = gorm.Expr("NULL")
 		} else {
-			updates["upstream_id"] = *svcFields.UpstreamID
+			updates["service_upstream_id"] = *svcFields.UpstreamID
 		}
-		updates["port"] = svcFields.Port
+		updates["service_port"] = svcFields.Port
 		updates["service_path"] = svcFields.ServicePath
-		updates["retries"] = svcFields.Retries
-		updates["connect_timeout"] = svcFields.ConnectTimeout
-		updates["write_timeout"] = svcFields.WriteTimeout
-		updates["read_timeout"] = svcFields.ReadTimeout
+		updates["service_retries"] = svcFields.Retries
+		updates["service_connect_timeout"] = svcFields.ConnectTimeout
+		updates["service_write_timeout"] = svcFields.WriteTimeout
+		updates["service_read_timeout"] = svcFields.ReadTimeout
 	}
-	if in.StripPath != nil {
-		updates["strip_path"] = *in.StripPath
+	if in.AccessStripPath != nil {
+		updates["access_strip_path"] = *in.AccessStripPath
 	}
 	if len(updates) > 0 {
 		if err := s.db.Model(api).Updates(updates).Error; err != nil {
@@ -329,9 +354,35 @@ func (s *APIService) SwitchVersion(ctx context.Context, id uint64, version strin
 	if err := json.Unmarshal(ver.ConfigSnapshot, &snap); err != nil {
 		return nil, err
 	}
+	if snap.AccessPath == "" {
+		snap.AccessPath = snap.LegacyPath
+	}
+	if snap.AccessMethods == "" {
+		snap.AccessMethods = snap.LegacyMethods
+	}
+	snap.AccessStripPath = snap.EffectiveStripPath()
+	snap.LegacyStripPath = nil
+	snap.ServiceProtocol = snap.EffectiveProtocol()
+	snap.ServiceHostKind = snap.EffectiveHostKind()
+	snap.ServiceHost = snap.EffectiveHost()
+	snap.ServiceUpstreamID = snap.EffectiveUpstreamID()
+	snap.ServicePort = snap.EffectivePort()
+	snap.ServiceRetries = snap.EffectiveRetries()
+	snap.ServiceConnectTimeout = snap.EffectiveConnectTimeout()
+	snap.ServiceWriteTimeout = snap.EffectiveWriteTimeout()
+	snap.ServiceReadTimeout = snap.EffectiveReadTimeout()
+	snap.LegacyProtocol = ""
+	snap.LegacyHostKind = ""
+	snap.LegacyHost = ""
+	snap.LegacyUpstreamID = nil
+	snap.LegacyPort = nil
+	snap.LegacyRetries = nil
+	snap.LegacyConnectTimeout = nil
+	snap.LegacyWriteTimeout = nil
+	snap.LegacyReadTimeout = nil
 
-	if snap.HostKind == model.HostKindUpstream && snap.UpstreamID > 0 {
-		kongHost, syncErr := s.syncUpstreamGateway(ctx, snap.UpstreamID, api.Group.Gateway)
+	if snap.ServiceHostKind == model.HostKindUpstream && snap.ServiceUpstreamID > 0 {
+		kongHost, syncErr := s.syncUpstreamGateway(ctx, snap.ServiceUpstreamID, api.Group.Gateway)
 		if syncErr != nil {
 			return nil, syncErr
 		}
@@ -356,26 +407,28 @@ func (s *APIService) SwitchVersion(ctx context.Context, id uint64, version strin
 	}
 
 	if err := s.db.Model(api).Updates(map[string]interface{}{
-		"name":             snap.Name,
-		"path":             snap.Path,
-		"methods":          snap.Methods,
-		"access_protocols": snap.AccessProtocols,
-		"upstream_url":     snap.UpstreamURL,
-		"protocol":         snap.Protocol,
-		"host_kind":        snap.HostKind,
-		"host":             snap.Host,
-		"upstream_id":      nilIfZero(snap.UpstreamID),
-		"port":             snap.Port,
-		"service_path":     snap.ServicePath,
-		"retries":          snap.Retries,
-		"connect_timeout":  snap.ConnectTimeout,
-		"write_timeout":    snap.WriteTimeout,
-		"read_timeout":     snap.ReadTimeout,
-		"strip_path":       snap.StripPath,
-		"status":           model.APIStatusPublished,
-		"current_version":  version,
-		"kong_service_id":  result.ServiceID,
-		"kong_route_id":    result.RouteID,
+		"name":                    snap.Name,
+		"access_path":             snap.AccessPath,
+		"access_methods":          snap.AccessMethods,
+		"access_protocols":        snap.AccessProtocols,
+		"access_hosts":            snap.AccessHosts,
+		"access_headers":          mustHeaderJSON(snap.AccessHeaders),
+		"upstream_url":            snap.UpstreamURL,
+		"service_protocol":        snap.ServiceProtocol,
+		"service_host_kind":       snap.ServiceHostKind,
+		"service_host":            snap.ServiceHost,
+		"service_upstream_id":     nilIfZero(snap.ServiceUpstreamID),
+		"service_port":            snap.ServicePort,
+		"service_path":            snap.ServicePath,
+		"service_retries":         snap.ServiceRetries,
+		"service_connect_timeout": snap.ServiceConnectTimeout,
+		"service_write_timeout":   snap.ServiceWriteTimeout,
+		"service_read_timeout":    snap.ServiceReadTimeout,
+		"access_strip_path":       snap.AccessStripPath,
+		"status":                  model.APIStatusPublished,
+		"current_version":         version,
+		"kong_service_id":         result.ServiceID,
+		"kong_route_id":           result.RouteID,
 	}).Error; err != nil {
 		return nil, err
 	}
@@ -419,6 +472,92 @@ func (s *APIService) getGroup(id uint64) (*model.APIGroup, error) {
 		return nil, err
 	}
 	return &group, nil
+}
+
+var accessHostPattern = regexp.MustCompile(`^(\*\.)?([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?::\d{1,5})?$`)
+var headerNamePattern = regexp.MustCompile(`^[A-Za-z0-9!#$%&'*+.^_` + "`" + `|~-]+$`)
+
+func normalizeAccessHosts(raw string) (string, error) {
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == ';'
+	})
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if !accessHostPattern.MatchString(p) {
+			return "", fmt.Errorf("%w: invalid access host %s", ErrBadRequest, p)
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return strings.Join(out, ","), nil
+}
+
+func normalizeAccessHeaders(in map[string][]string) (datatypes.JSON, error) {
+	if len(in) == 0 {
+		return datatypes.JSON([]byte("null")), nil
+	}
+	out := map[string][]string{}
+	for name, vals := range in {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if !headerNamePattern.MatchString(name) {
+			return nil, fmt.Errorf("%w: invalid header name %s", ErrBadRequest, name)
+		}
+		cleaned := make([]string, 0, len(vals))
+		seen := map[string]struct{}{}
+		for _, v := range vals {
+			v = strings.TrimSpace(v)
+			if v == "" || strings.ContainsAny(v, "\r\n") {
+				continue
+			}
+			if _, ok := seen[v]; ok {
+				continue
+			}
+			seen[v] = struct{}{}
+			cleaned = append(cleaned, v)
+		}
+		if len(cleaned) == 0 {
+			return nil, fmt.Errorf("%w: header %s needs a value", ErrBadRequest, name)
+		}
+		out[name] = cleaned
+	}
+	if len(out) == 0 {
+		return datatypes.JSON([]byte("null")), nil
+	}
+	raw, err := json.Marshal(out)
+	if err != nil {
+		return nil, err
+	}
+	return datatypes.JSON(raw), nil
+}
+
+func mustHeaderJSON(headers map[string][]string) datatypes.JSON {
+	raw, err := normalizeAccessHeaders(headers)
+	if err != nil || len(raw) == 0 {
+		return datatypes.JSON([]byte("null"))
+	}
+	return raw
+}
+
+func decodeHeaders(raw datatypes.JSON) map[string][]string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var out map[string][]string
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil
+	}
+	return out
 }
 
 func normalizeAccessProtocols(raw string) string {

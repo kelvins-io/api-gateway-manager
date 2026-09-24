@@ -94,21 +94,23 @@ export interface ApiItem {
   id: number
   group_id: number
   name: string
-  path: string
-  methods: string
+  access_path: string
+  access_methods: string
   access_protocols: string
+  access_hosts?: string
+  access_headers?: Record<string, string[]>
   upstream_url?: string
-  protocol: string
-  host_kind: string
-  host: string
-  upstream_id?: number
-  port: number
+  service_protocol: string
+  service_host_kind: string
+  service_host: string
+  service_upstream_id?: number
+  service_port: number
   service_path: string
-  retries: number
-  connect_timeout: number
-  write_timeout: number
-  read_timeout: number
-  strip_path: boolean
+  service_retries: number
+  service_connect_timeout: number
+  service_write_timeout: number
+  service_read_timeout: number
+  access_strip_path: boolean
   status: string
   current_version: string
   kong_service_id?: string
