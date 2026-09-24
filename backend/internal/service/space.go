@@ -171,6 +171,21 @@ func (s *SpaceService) Delete(id uint64) error {
 		if err := tx.Where("space_id = ?", id).Delete(&model.APIGroup{}).Error; err != nil {
 			return err
 		}
+		var ups []model.Upstream
+		if err := tx.Where("space_id = ?", id).Find(&ups).Error; err != nil {
+			return err
+		}
+		for _, up := range ups {
+			if err := tx.Where("upstream_id = ?", up.ID).Delete(&model.UpstreamTarget{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("upstream_id = ?", up.ID).Delete(&model.UpstreamGateway{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("space_id = ?", id).Delete(&model.Upstream{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("space_id = ?", id).Delete(&model.SpaceMember{}).Error; err != nil {
 			return err
 		}

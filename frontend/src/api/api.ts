@@ -1,5 +1,5 @@
 import http, { request } from './http'
-import type { ApiGroup, ApiItem, ApiVersion } from '@/types'
+import type { ApiGroup, ApiItem, ApiVersion, UpstreamItem } from '@/types'
 
 export function listGroups(spaceId: number) {
   return request<ApiGroup[]>(() => http.get(`/spaces/${spaceId}/groups`))
@@ -47,4 +47,20 @@ export function switchVersion(aid: number, version: string) {
 
 export function listVersions(aid: number) {
   return request<ApiVersion[]>(() => http.get(`/apis/${aid}/versions`))
+}
+
+export function listUpstreams(spaceId: number) {
+  return request<UpstreamItem[]>(() => http.get(`/spaces/${spaceId}/upstreams`))
+}
+
+export function createUpstream(spaceId: number, data: Partial<UpstreamItem>) {
+  return request<UpstreamItem>(() => http.post(`/spaces/${spaceId}/upstreams`, data))
+}
+
+export function updateUpstream(spaceId: number, id: number, data: Partial<UpstreamItem>) {
+  return request<UpstreamItem>(() => http.put(`/spaces/${spaceId}/upstreams/${id}`, data))
+}
+
+export function deleteUpstream(spaceId: number, id: number) {
+  return request<null>(() => http.delete(`/spaces/${spaceId}/upstreams/${id}`))
 }

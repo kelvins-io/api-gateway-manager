@@ -49,6 +49,7 @@ func main() {
 	gatewaySvc := service.NewGatewayService(db)
 	groupSvc := service.NewGroupService(db)
 	apiSvc := service.NewAPIService(db)
+	upstreamSvc := service.NewUpstreamService(db)
 
 	r := router.Setup(db, jwtMgr, log, router.Handlers{
 		Auth:     handler.NewAuthHandler(authSvc),
@@ -56,6 +57,7 @@ func main() {
 		Gateway:  handler.NewGatewayHandler(gatewaySvc),
 		Group:    handler.NewGroupHandler(groupSvc),
 		API:      handler.NewAPIHandler(apiSvc),
+		Upstream: handler.NewUpstreamHandler(upstreamSvc),
 		APISvc:   apiSvc,
 		GroupSvc: groupSvc,
 	})

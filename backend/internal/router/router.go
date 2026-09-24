@@ -19,8 +19,9 @@ type Handlers struct {
 	Space   *handler.SpaceHandler
 	Gateway *handler.GatewayHandler
 	Group   *handler.GroupHandler
-	API     *handler.APIHandler
-	APISvc  *service.APIService
+	API      *handler.APIHandler
+	Upstream *handler.UpstreamHandler
+	APISvc   *service.APIService
 	GroupSvc *service.GroupService
 }
 
@@ -60,6 +61,10 @@ func Setup(db *gorm.DB, jwtMgr *jwtutil.Manager, log *zap.Logger, h Handlers) *g
 			// groups under space
 			authed.GET("/spaces/:id/groups", middleware.RequireSpaceRole(db, "id"), h.Group.List)
 			authed.POST("/spaces/:id/groups", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Group.Create)
+			authed.GET("/spaces/:id/upstreams", middleware.RequireSpaceRole(db, "id"), h.Upstream.List)
+			authed.POST("/spaces/:id/upstreams", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Upstream.Create)
+			authed.PUT("/spaces/:id/upstreams/:upid", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Upstream.Update)
+			authed.DELETE("/spaces/:id/upstreams/:upid", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Upstream.Delete)
 
 			// gateways: full CRUD only for system admin
 			admin := authed.Group("")

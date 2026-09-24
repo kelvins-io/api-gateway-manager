@@ -2,13 +2,14 @@ package kongclient
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/kong/go-kong/kong"
 	"github.com/kelvins-io/api-gateway-manager/internal/model"
+	"github.com/kong/go-kong/kong"
 )
 
 type Client struct {
@@ -48,18 +49,22 @@ type PublishResult struct {
 
 func (c *Client) Publish(ctx context.Context, apiID uint64, snap model.APIConfigSnapshot, existingServiceID, existingRouteID string) (*PublishResult, error) {
 	serviceName := fmt.Sprintf("agm-api-%d", apiID)
-	host, port, path, protocol, err := parseUpstream(snap.UpstreamURL)
+	host, port, path, protocol, retries, connTimeout, writeTimeout, readTimeout, err := serviceFields(snap)
 	if err != nil {
 		return nil, err
 	}
 
 	svc := &kong.Service{
-		Name:     kong.String(serviceName),
-		Host:     kong.String(host),
-		Port:     kong.Int(port),
-		Path:     kong.String(path),
-		Protocol: kong.String(protocol),
-		Tags:     kong.StringSlice(fmt.Sprintf("agm-api-%d", apiID)),
+		Name:           kong.String(serviceName),
+		Host:           kong.String(host),
+		Port:           kong.Int(port),
+		Path:           kong.String(path),
+		Protocol:       kong.String(protocol),
+		Retries:        kong.Int(retries),
+		ConnectTimeout: kong.Int(connTimeout),
+		WriteTimeout:   kong.Int(writeTimeout),
+		ReadTimeout:    kong.Int(readTimeout),
+		Tags:           kong.StringSlice(fmt.Sprintf("agm-api-%d", apiID)),
 	}
 
 	var service *kong.Service
@@ -86,6 +91,7 @@ func (c *Client) Publish(ctx context.Context, apiID uint64, snap model.APIConfig
 		Name:      kong.String(routeName),
 		Paths:     kong.StringSlice(paths...),
 		Methods:   kong.StringSlice(methods...),
+		Protocols: kong.StringSlice(accessProtocols(snap.AccessProtocols)...),
 		StripPath: kong.Bool(snap.StripPath),
 		Service:   &kong.Service{ID: service.ID},
 		Tags:      kong.StringSlice(fmt.Sprintf("agm-api-%d", apiID)),
@@ -128,6 +134,28 @@ func (c *Client) Offline(ctx context.Context, serviceID, routeID string) error {
 		}
 	}
 	return nil
+}
+
+func accessProtocols(raw string) []string {
+	allowed := map[string]struct{}{"http": {}, "https": {}, "grpc": {}, "grpcs": {}}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, p := range parts {
+		p = strings.TrimSpace(strings.ToLower(p))
+		if _, ok := allowed[p]; !ok {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return []string{"http"}
+	}
+	return out
 }
 
 func splitMethods(methods string) []string {
@@ -177,6 +205,177 @@ func parseUpstream(raw string) (host string, port int, path string, protocol str
 		return "", 0, "", "", fmt.Errorf("invalid upstream_url host")
 	}
 	return host, port, path, protocol, nil
+}
+
+func serviceFields(snap model.APIConfigSnapshot) (host string, port int, path, protocol string, retries, connTimeout, writeTimeout, readTimeout int, err error) {
+	if snap.Protocol == "" && snap.KongHost == "" && snap.Host == "" {
+		host, port, path, protocol, err = parseUpstream(snap.UpstreamURL)
+		if err != nil {
+			return
+		}
+		return host, port, path, protocol, 5, 60000, 60000, 60000, nil
+	}
+	protocol = snap.Protocol
+	if protocol == "" {
+		protocol = "http"
+	}
+	host = snap.KongHost
+	if host == "" {
+		host = snap.Host
+	}
+	port = snap.Port
+	if port == 0 {
+		port = 80
+	}
+	path = snap.ServicePath
+	if path == "" {
+		path = "/"
+	}
+	retries = snap.Retries
+	connTimeout = snap.ConnectTimeout
+	writeTimeout = snap.WriteTimeout
+	readTimeout = snap.ReadTimeout
+	if host == "" {
+		err = fmt.Errorf("service host is empty")
+	}
+	return
+}
+
+type TargetSync struct {
+	Target string
+	Weight int
+}
+
+type UpstreamSync struct {
+	KongName               string
+	ExistingID             string
+	Algorithm              string
+	Slots                  int
+	HashOn                 string
+	HashFallback           string
+	HashOnHeader           string
+	HashFallbackHeader     string
+	HashOnCookie           string
+	HashOnCookiePath       string
+	HashOnQueryArg         string
+	HashFallbackQueryArg   string
+	HashOnURICapture       string
+	HashFallbackURICapture string
+	Healthchecks           json.RawMessage
+	Targets                []TargetSync
+}
+
+func (c *Client) SyncUpstream(ctx context.Context, in UpstreamSync) (string, error) {
+	hc, err := decodeHealthchecks(in.Healthchecks)
+	if err != nil {
+		return "", err
+	}
+	slots := in.Slots
+	if slots <= 0 {
+		slots = 10000
+	}
+	algo := in.Algorithm
+	if algo == "" {
+		algo = "round-robin"
+	}
+	up := &kong.Upstream{
+		Name:                   kong.String(in.KongName),
+		Algorithm:              kong.String(algo),
+		Slots:                  kong.Int(slots),
+		Healthchecks:           hc,
+		HashOn:                 emptyStringPtr(in.HashOn),
+		HashFallback:           emptyStringPtr(in.HashFallback),
+		HashOnHeader:           emptyStringPtr(in.HashOnHeader),
+		HashFallbackHeader:     emptyStringPtr(in.HashFallbackHeader),
+		HashOnCookie:           emptyStringPtr(in.HashOnCookie),
+		HashOnCookiePath:       emptyStringPtr(in.HashOnCookiePath),
+		HashOnQueryArg:         emptyStringPtr(in.HashOnQueryArg),
+		HashFallbackQueryArg:   emptyStringPtr(in.HashFallbackQueryArg),
+		HashOnURICapture:       emptyStringPtr(in.HashOnURICapture),
+		HashFallbackURICapture: emptyStringPtr(in.HashFallbackURICapture),
+	}
+	var saved *kong.Upstream
+	if in.ExistingID != "" {
+		up.ID = kong.String(in.ExistingID)
+		saved, err = c.kong.Upstreams.Update(ctx, up)
+		if err != nil {
+			up.ID = nil
+			saved, err = c.kong.Upstreams.Create(ctx, up)
+		}
+	} else {
+		saved, err = c.kong.Upstreams.Create(ctx, up)
+		if err != nil {
+			existing, getErr := c.kong.Upstreams.Get(ctx, &in.KongName)
+			if getErr != nil {
+				return "", fmt.Errorf("kong upstream upsert: %w", err)
+			}
+			up.ID = existing.ID
+			saved, err = c.kong.Upstreams.Update(ctx, up)
+		}
+	}
+	if err != nil {
+		return "", fmt.Errorf("kong upstream upsert: %w", err)
+	}
+	if err := c.replaceTargets(ctx, *saved.ID, in.Targets); err != nil {
+		return "", err
+	}
+	return *saved.ID, nil
+}
+
+func (c *Client) DeleteUpstream(ctx context.Context, id string) error {
+	if id == "" {
+		return nil
+	}
+	if err := c.kong.Upstreams.Delete(ctx, &id); err != nil && !isNotFound(err) {
+		return fmt.Errorf("delete upstream: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) replaceTargets(ctx context.Context, upstreamID string, targets []TargetSync) error {
+	existing, err := c.kong.Targets.ListAll(ctx, &upstreamID)
+	if err != nil && !isNotFound(err) {
+		return fmt.Errorf("list targets: %w", err)
+	}
+	for _, t := range existing {
+		if t.ID == nil {
+			continue
+		}
+		if err := c.kong.Targets.Delete(ctx, &upstreamID, t.ID); err != nil && !isNotFound(err) {
+			return fmt.Errorf("delete target: %w", err)
+		}
+	}
+	for _, t := range targets {
+		weight := t.Weight
+		if weight <= 0 {
+			weight = 100
+		}
+		if _, err := c.kong.Targets.Create(ctx, &upstreamID, &kong.Target{
+			Target: kong.String(t.Target),
+			Weight: kong.Int(weight),
+		}); err != nil {
+			return fmt.Errorf("create target: %w", err)
+		}
+	}
+	return nil
+}
+
+func decodeHealthchecks(raw json.RawMessage) (*kong.Healthcheck, error) {
+	if len(raw) == 0 || string(raw) == "null" || string(raw) == "{}" {
+		return nil, nil
+	}
+	var hc kong.Healthcheck
+	if err := json.Unmarshal(raw, &hc); err != nil {
+		return nil, fmt.Errorf("healthchecks: %w", err)
+	}
+	return &hc, nil
+}
+
+func emptyStringPtr(s string) *string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return kong.String(s)
 }
 
 func isNotFound(err error) bool {

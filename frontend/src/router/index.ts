@@ -47,6 +47,11 @@ const router = createRouter({
           name: 'apis',
           component: () => import('@/views/ApisView.vue'),
         },
+        {
+          path: 'upstreams',
+          name: 'upstreams',
+          component: () => import('@/views/UpstreamsView.vue'),
+        },
       ],
     },
   ],

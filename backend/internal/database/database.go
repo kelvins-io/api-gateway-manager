@@ -28,5 +28,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.APIGroup{},
 		&model.API{},
 		&model.APIVersion{},
+		&model.Upstream{},
+		&model.UpstreamTarget{},
+		&model.UpstreamGateway{},
 	)
 }

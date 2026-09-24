@@ -24,19 +24,39 @@ func NewAPIService(db *gorm.DB) *APIService {
 }
 
 type CreateAPIInput struct {
-	Name        string `json:"name" binding:"required,min=1,max=128"`
-	Path        string `json:"path" binding:"required,min=1,max=2048"`
-	Methods     string `json:"methods" binding:"required"`
-	UpstreamURL string `json:"upstream_url" binding:"required,min=8,max=512"`
-	StripPath   *bool  `json:"strip_path"`
+	Name            string  `json:"name" binding:"required,min=1,max=128"`
+	Path            string  `json:"path" binding:"required,min=1,max=2048"`
+	Methods         string  `json:"methods" binding:"required"`
+	AccessProtocols string  `json:"access_protocols"`
+	Protocol        string  `json:"protocol"`
+	HostKind        string  `json:"host_kind"`
+	Host            string  `json:"host"`
+	UpstreamID      *uint64 `json:"upstream_id"`
+	Port            int     `json:"port"`
+	ServicePath     string  `json:"service_path"`
+	Retries         *int    `json:"retries"`
+	ConnectTimeout  *int    `json:"connect_timeout"`
+	WriteTimeout    *int    `json:"write_timeout"`
+	ReadTimeout     *int    `json:"read_timeout"`
+	StripPath       *bool   `json:"strip_path"`
 }
 
 type UpdateAPIInput struct {
-	Name        string `json:"name" binding:"omitempty,min=1,max=128"`
-	Path        string `json:"path" binding:"omitempty,min=1,max=2048"`
-	Methods     string `json:"methods"`
-	UpstreamURL string `json:"upstream_url" binding:"omitempty,min=8,max=512"`
-	StripPath   *bool  `json:"strip_path"`
+	Name            string  `json:"name" binding:"omitempty,min=1,max=128"`
+	Path            string  `json:"path" binding:"omitempty,min=1,max=2048"`
+	Methods         string  `json:"methods"`
+	AccessProtocols string  `json:"access_protocols"`
+	Protocol        string  `json:"protocol"`
+	HostKind        string  `json:"host_kind"`
+	Host            string  `json:"host"`
+	UpstreamID      *uint64 `json:"upstream_id"`
+	Port            *int    `json:"port"`
+	ServicePath     string  `json:"service_path"`
+	Retries         *int    `json:"retries"`
+	ConnectTimeout  *int    `json:"connect_timeout"`
+	WriteTimeout    *int    `json:"write_timeout"`
+	ReadTimeout     *int    `json:"read_timeout"`
+	StripPath       *bool   `json:"strip_path"`
 }
 
 type SwitchVersionInput struct {
@@ -60,14 +80,32 @@ func (s *APIService) Create(groupID uint64, in CreateAPIInput) (*model.API, erro
 	if err != nil {
 		return nil, err
 	}
+	svcFields, err := s.normalizeService(group.SpaceID, serviceInput{
+		Protocol: in.Protocol, HostKind: in.HostKind, Host: in.Host, UpstreamID: in.UpstreamID,
+		Port: in.Port, ServicePath: in.ServicePath, Retries: in.Retries,
+		ConnectTimeout: in.ConnectTimeout, WriteTimeout: in.WriteTimeout, ReadTimeout: in.ReadTimeout,
+	}, true)
+	if err != nil {
+		return nil, err
+	}
 	api := &model.API{
-		GroupID:     groupID,
-		Name:        in.Name,
-		Path:        strings.Join(paths, ","),
-		Methods:     normalizeMethods(in.Methods),
-		UpstreamURL: in.UpstreamURL,
-		StripPath:   strip,
-		Status:      model.APIStatusDraft,
+		GroupID:         groupID,
+		Name:            in.Name,
+		Path:            strings.Join(paths, ","),
+		Methods:         normalizeMethods(in.Methods),
+		AccessProtocols: normalizeAccessProtocols(in.AccessProtocols),
+		Protocol:        svcFields.Protocol,
+		HostKind:        svcFields.HostKind,
+		Host:            svcFields.Host,
+		UpstreamID:      svcFields.UpstreamID,
+		Port:            svcFields.Port,
+		ServicePath:     svcFields.ServicePath,
+		Retries:         svcFields.Retries,
+		ConnectTimeout:  svcFields.ConnectTimeout,
+		WriteTimeout:    svcFields.WriteTimeout,
+		ReadTimeout:     svcFields.ReadTimeout,
+		StripPath:       strip,
+		Status:          model.APIStatusDraft,
 	}
 	if err := s.db.Create(api).Error; err != nil {
 		return nil, err
@@ -118,8 +156,45 @@ func (s *APIService) Update(id uint64, in UpdateAPIInput) (*model.API, error) {
 	if in.Methods != "" {
 		updates["methods"] = normalizeMethods(in.Methods)
 	}
-	if in.UpstreamURL != "" {
-		updates["upstream_url"] = in.UpstreamURL
+	if in.AccessProtocols != "" {
+		updates["access_protocols"] = normalizeAccessProtocols(in.AccessProtocols)
+	}
+	if in.Protocol != "" || in.HostKind != "" || in.Host != "" || in.UpstreamID != nil || in.Port != nil || in.ServicePath != "" || in.Retries != nil || in.ConnectTimeout != nil || in.WriteTimeout != nil || in.ReadTimeout != nil {
+		port := api.Port
+		if in.Port != nil {
+			port = *in.Port
+		}
+		svcFields, err := s.normalizeService(api.Group.SpaceID, serviceInput{
+			Protocol: in.Protocol, HostKind: in.HostKind, Host: in.Host, UpstreamID: in.UpstreamID,
+			Port: port, ServicePath: in.ServicePath, Retries: in.Retries,
+			ConnectTimeout: in.ConnectTimeout, WriteTimeout: in.WriteTimeout, ReadTimeout: in.ReadTimeout,
+		}, false)
+		if err != nil {
+			return nil, err
+		}
+		if svcFields.Protocol == "" {
+			svcFields.Protocol = api.Protocol
+		}
+		if svcFields.HostKind == "" {
+			svcFields.HostKind = api.HostKind
+		}
+		if svcFields.ServicePath == "" {
+			svcFields.ServicePath = api.ServicePath
+		}
+		updates["protocol"] = svcFields.Protocol
+		updates["host_kind"] = svcFields.HostKind
+		updates["host"] = svcFields.Host
+		if svcFields.UpstreamID == nil {
+			updates["upstream_id"] = gorm.Expr("NULL")
+		} else {
+			updates["upstream_id"] = *svcFields.UpstreamID
+		}
+		updates["port"] = svcFields.Port
+		updates["service_path"] = svcFields.ServicePath
+		updates["retries"] = svcFields.Retries
+		updates["connect_timeout"] = svcFields.ConnectTimeout
+		updates["write_timeout"] = svcFields.WriteTimeout
+		updates["read_timeout"] = svcFields.ReadTimeout
 	}
 	if in.StripPath != nil {
 		updates["strip_path"] = *in.StripPath
@@ -157,12 +232,9 @@ func (s *APIService) Publish(ctx context.Context, id uint64) (*model.API, error)
 		return nil, fmt.Errorf("%w: gateway not configured", ErrBadRequest)
 	}
 
-	snap := model.APIConfigSnapshot{
-		Name:        api.Name,
-		Path:        api.Path,
-		Methods:     api.Methods,
-		UpstreamURL: api.UpstreamURL,
-		StripPath:   api.StripPath,
+	snap, err := s.snapshotOf(ctx, api)
+	if err != nil {
+		return nil, err
 	}
 
 	client, err := kongclient.New(api.Group.Gateway.AdminAPI)
@@ -258,6 +330,14 @@ func (s *APIService) SwitchVersion(ctx context.Context, id uint64, version strin
 		return nil, err
 	}
 
+	if snap.HostKind == model.HostKindUpstream && snap.UpstreamID > 0 {
+		kongHost, syncErr := s.syncUpstreamGateway(ctx, snap.UpstreamID, api.Group.Gateway)
+		if syncErr != nil {
+			return nil, syncErr
+		}
+		snap.KongHost = kongHost
+	}
+
 	client, err := kongclient.New(api.Group.Gateway.AdminAPI)
 	if err != nil {
 		return nil, err
@@ -276,15 +356,26 @@ func (s *APIService) SwitchVersion(ctx context.Context, id uint64, version strin
 	}
 
 	if err := s.db.Model(api).Updates(map[string]interface{}{
-		"name":            snap.Name,
-		"path":            snap.Path,
-		"methods":         snap.Methods,
-		"upstream_url":    snap.UpstreamURL,
-		"strip_path":      snap.StripPath,
-		"status":          model.APIStatusPublished,
-		"current_version": version,
-		"kong_service_id": result.ServiceID,
-		"kong_route_id":   result.RouteID,
+		"name":             snap.Name,
+		"path":             snap.Path,
+		"methods":          snap.Methods,
+		"access_protocols": snap.AccessProtocols,
+		"upstream_url":     snap.UpstreamURL,
+		"protocol":         snap.Protocol,
+		"host_kind":        snap.HostKind,
+		"host":             snap.Host,
+		"upstream_id":      nilIfZero(snap.UpstreamID),
+		"port":             snap.Port,
+		"service_path":     snap.ServicePath,
+		"retries":          snap.Retries,
+		"connect_timeout":  snap.ConnectTimeout,
+		"write_timeout":    snap.WriteTimeout,
+		"read_timeout":     snap.ReadTimeout,
+		"strip_path":       snap.StripPath,
+		"status":           model.APIStatusPublished,
+		"current_version":  version,
+		"kong_service_id":  result.ServiceID,
+		"kong_route_id":    result.RouteID,
 	}).Error; err != nil {
 		return nil, err
 	}
@@ -328,6 +419,28 @@ func (s *APIService) getGroup(id uint64) (*model.APIGroup, error) {
 		return nil, err
 	}
 	return &group, nil
+}
+
+func normalizeAccessProtocols(raw string) string {
+	allowed := map[string]struct{}{"http": {}, "https": {}, "grpc": {}, "grpcs": {}}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, p := range parts {
+		p = strings.TrimSpace(strings.ToLower(p))
+		if _, ok := allowed[p]; !ok {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return "http"
+	}
+	return strings.Join(out, ",")
 }
 
 func normalizeMethods(methods string) string {

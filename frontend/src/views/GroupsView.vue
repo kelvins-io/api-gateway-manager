@@ -10,6 +10,7 @@
     />
     <div class="toolbar">
       <el-button type="primary" :disabled="!store.currentSpaceId" @click="openCreate">新建分组</el-button>
+      <el-button :disabled="!store.currentSpaceId" @click="$router.push('/upstreams')">Upstream</el-button>
       <el-button :disabled="!store.currentSpaceId" @click="load">刷新</el-button>
       <span v-if="store.currentSpace" class="hint">
         当前空间：{{ store.currentSpace.name }}
