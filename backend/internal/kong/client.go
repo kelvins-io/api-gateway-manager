@@ -407,6 +407,232 @@ func emptyStringPtr(s string) *string {
 	return kong.String(s)
 }
 
+type CredentialSync struct {
+	Plugin string
+	Config map[string]string
+}
+
+type ConsumerSync struct {
+	KongUsername string
+	KongCustomID string
+	ExistingID   string
+	Tag          string
+	Credentials  []CredentialSync
+}
+
+func (c *Client) SyncConsumer(ctx context.Context, in ConsumerSync) (string, error) {
+	body := &kong.Consumer{
+		Username: kong.String(in.KongUsername),
+		Tags:     kong.StringSlice(in.Tag),
+	}
+	if in.KongCustomID != "" {
+		body.CustomID = kong.String(in.KongCustomID)
+	}
+	var saved *kong.Consumer
+	var err error
+	if in.ExistingID != "" {
+		body.ID = kong.String(in.ExistingID)
+		saved, err = c.kong.Consumers.Update(ctx, body)
+		if err != nil {
+			body.ID = nil
+			saved, err = c.kong.Consumers.Create(ctx, body)
+		}
+	} else {
+		saved, err = c.kong.Consumers.Create(ctx, body)
+		if err != nil {
+			existing, getErr := c.kong.Consumers.Get(ctx, &in.KongUsername)
+			if getErr != nil {
+				return "", fmt.Errorf("kong consumer upsert: %w", err)
+			}
+			body.ID = existing.ID
+			saved, err = c.kong.Consumers.Update(ctx, body)
+		}
+	}
+	if err != nil {
+		return "", fmt.Errorf("kong consumer upsert: %w", err)
+	}
+	if err := c.replaceCredentials(ctx, *saved.ID, in.Credentials); err != nil {
+		return "", err
+	}
+	return *saved.ID, nil
+}
+
+func (c *Client) DeleteConsumer(ctx context.Context, id string) error {
+	if id == "" {
+		return nil
+	}
+	if err := c.kong.Consumers.Delete(ctx, &id); err != nil && !isNotFound(err) {
+		return fmt.Errorf("delete consumer: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) replaceCredentials(ctx context.Context, consumerID string, creds []CredentialSync) error {
+	if err := c.clearCredentials(ctx, consumerID); err != nil {
+		return err
+	}
+	for _, cred := range creds {
+		if err := c.createCredential(ctx, consumerID, cred); err != nil {
+			return fmt.Errorf("create %s credential: %w", cred.Plugin, err)
+		}
+	}
+	return nil
+}
+
+func (c *Client) clearCredentials(ctx context.Context, consumerID string) error {
+	keys, _, err := c.kong.KeyAuths.ListForConsumer(ctx, &consumerID, &kong.ListOpt{Size: 1000})
+	if err != nil && !isNotFound(err) {
+		return fmt.Errorf("list key-auth: %w", err)
+	}
+	for _, item := range keys {
+		if item.ID == nil {
+			continue
+		}
+		if err := c.kong.KeyAuths.Delete(ctx, &consumerID, item.ID); err != nil && !isNotFound(err) {
+			return err
+		}
+	}
+	basics, _, err := c.kong.BasicAuths.ListForConsumer(ctx, &consumerID, &kong.ListOpt{Size: 1000})
+	if err != nil && !isNotFound(err) {
+		return fmt.Errorf("list basic-auth: %w", err)
+	}
+	for _, item := range basics {
+		if item.ID == nil {
+			continue
+		}
+		if err := c.kong.BasicAuths.Delete(ctx, &consumerID, item.ID); err != nil && !isNotFound(err) {
+			return err
+		}
+	}
+	jwts, _, err := c.kong.JWTAuths.ListForConsumer(ctx, &consumerID, &kong.ListOpt{Size: 1000})
+	if err != nil && !isNotFound(err) {
+		return fmt.Errorf("list jwt: %w", err)
+	}
+	for _, item := range jwts {
+		if item.ID == nil {
+			continue
+		}
+		if err := c.kong.JWTAuths.Delete(ctx, &consumerID, item.ID); err != nil && !isNotFound(err) {
+			return err
+		}
+	}
+	hmacs, _, err := c.kong.HMACAuths.ListForConsumer(ctx, &consumerID, &kong.ListOpt{Size: 1000})
+	if err != nil && !isNotFound(err) {
+		return fmt.Errorf("list hmac-auth: %w", err)
+	}
+	for _, item := range hmacs {
+		if item.ID == nil {
+			continue
+		}
+		if err := c.kong.HMACAuths.Delete(ctx, &consumerID, item.ID); err != nil && !isNotFound(err) {
+			return err
+		}
+	}
+	acls, _, err := c.kong.ACLs.ListForConsumer(ctx, &consumerID, &kong.ListOpt{Size: 1000})
+	if err != nil && !isNotFound(err) {
+		return fmt.Errorf("list acl: %w", err)
+	}
+	for _, item := range acls {
+		if item.ID == nil {
+			continue
+		}
+		if err := c.kong.ACLs.Delete(ctx, &consumerID, item.ID); err != nil && !isNotFound(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) createCredential(ctx context.Context, consumerID string, cred CredentialSync) error {
+	switch cred.Plugin {
+	case "key-auth":
+		_, err := c.kong.KeyAuths.Create(ctx, &consumerID, &kong.KeyAuth{Key: kong.String(cred.Config["key"])})
+		return err
+	case "basic-auth":
+		_, err := c.kong.BasicAuths.Create(ctx, &consumerID, &kong.BasicAuth{
+			Username: kong.String(cred.Config["username"]),
+			Password: kong.String(cred.Config["password"]),
+		})
+		return err
+	case "jwt":
+		body := &kong.JWTAuth{
+			Algorithm: kong.String(cred.Config["algorithm"]),
+		}
+		if cred.Config["key"] != "" {
+			body.Key = kong.String(cred.Config["key"])
+		}
+		if cred.Config["secret"] != "" {
+			body.Secret = kong.String(cred.Config["secret"])
+		}
+		if cred.Config["rsa_public_key"] != "" {
+			body.RSAPublicKey = kong.String(cred.Config["rsa_public_key"])
+		}
+		_, err := c.kong.JWTAuths.Create(ctx, &consumerID, body)
+		return err
+	case "hmac-auth":
+		_, err := c.kong.HMACAuths.Create(ctx, &consumerID, &kong.HMACAuth{
+			Username: kong.String(cred.Config["username"]),
+			Secret:   kong.String(cred.Config["secret"]),
+		})
+		return err
+	case "acl":
+		_, err := c.kong.ACLs.Create(ctx, &consumerID, &kong.ACLGroup{Group: kong.String(cred.Config["group"])})
+		return err
+	default:
+		return fmt.Errorf("unsupported plugin %s", cred.Plugin)
+	}
+}
+
+type PluginSync struct {
+	Name         string
+	InstanceName string
+	Config       map[string]interface{}
+	Enabled      bool
+	Tag          string
+}
+
+// ReplaceServicePlugins removes plugins previously managed for this API and creates the given set on the service.
+func (c *Client) ReplaceServicePlugins(ctx context.Context, serviceID, managedTag string, plugins []PluginSync) error {
+	if serviceID == "" {
+		return nil
+	}
+	existing, err := c.kong.Plugins.ListAllForService(ctx, &serviceID)
+	if err != nil && !isNotFound(err) {
+		return fmt.Errorf("list service plugins: %w", err)
+	}
+	for _, item := range existing {
+		if item == nil || item.ID == nil || !hasTag(item.Tags, managedTag) {
+			continue
+		}
+		if err := c.kong.Plugins.Delete(ctx, item.ID); err != nil && !isNotFound(err) {
+			return fmt.Errorf("delete plugin: %w", err)
+		}
+	}
+	for _, p := range plugins {
+		body := &kong.Plugin{
+			Name:         kong.String(p.Name),
+			InstanceName: kong.String(p.InstanceName),
+			Config:       kong.Configuration(p.Config),
+			Enabled:      kong.Bool(p.Enabled),
+			Service:      &kong.Service{ID: kong.String(serviceID)},
+			Tags:         kong.StringSlice(managedTag, p.Tag),
+		}
+		if _, err := c.kong.Plugins.Create(ctx, body); err != nil {
+			return fmt.Errorf("create plugin %s: %w", p.Name, err)
+		}
+	}
+	return nil
+}
+
+func hasTag(tags []*string, want string) bool {
+	for _, t := range tags {
+		if t != nil && *t == want {
+			return true
+		}
+	}
+	return false
+}
+
 func isNotFound(err error) bool {
 	if err == nil {
 		return false

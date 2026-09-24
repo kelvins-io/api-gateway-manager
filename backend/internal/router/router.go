@@ -15,12 +15,14 @@ import (
 )
 
 type Handlers struct {
-	Auth    *handler.AuthHandler
-	Space   *handler.SpaceHandler
-	Gateway *handler.GatewayHandler
-	Group   *handler.GroupHandler
+	Auth     *handler.AuthHandler
+	Space    *handler.SpaceHandler
+	Gateway  *handler.GatewayHandler
+	Group    *handler.GroupHandler
 	API      *handler.APIHandler
 	Upstream *handler.UpstreamHandler
+	Consumer *handler.ConsumerHandler
+	Plugin   *handler.PluginHandler
 	APISvc   *service.APIService
 	GroupSvc *service.GroupService
 }
@@ -65,6 +67,17 @@ func Setup(db *gorm.DB, jwtMgr *jwtutil.Manager, log *zap.Logger, h Handlers) *g
 			authed.POST("/spaces/:id/upstreams", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Upstream.Create)
 			authed.PUT("/spaces/:id/upstreams/:upid", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Upstream.Update)
 			authed.DELETE("/spaces/:id/upstreams/:upid", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Upstream.Delete)
+			authed.GET("/spaces/:id/apis", middleware.RequireSpaceRole(db, "id"), h.API.ListBySpace)
+			authed.GET("/spaces/:id/consumers", middleware.RequireSpaceRole(db, "id"), h.Consumer.List)
+			authed.POST("/spaces/:id/consumers", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Consumer.Create)
+			authed.POST("/spaces/:id/consumers/sync", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Consumer.Sync)
+			authed.PUT("/spaces/:id/consumers/:cid", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Consumer.Update)
+			authed.DELETE("/spaces/:id/consumers/:cid", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Consumer.Delete)
+			authed.GET("/spaces/:id/plugins", middleware.RequireSpaceRole(db, "id"), h.Plugin.List)
+			authed.GET("/spaces/:id/plugins/:pid/apis", middleware.RequireSpaceRole(db, "id"), h.Plugin.ListAPIs)
+			authed.POST("/spaces/:id/plugins", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Plugin.Create)
+			authed.PUT("/spaces/:id/plugins/:pid", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Plugin.Update)
+			authed.DELETE("/spaces/:id/plugins/:pid", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Plugin.Delete)
 
 			// gateways: full CRUD only for system admin
 			admin := authed.Group("")

@@ -102,6 +102,12 @@ func (s *GroupService) Delete(id uint64) error {
 			if err := tx.Where("api_id = ?", a.ID).Delete(&model.APIVersion{}).Error; err != nil {
 				return err
 			}
+			if err := tx.Exec("DELETE FROM api_plugins WHERE api_id = ?", a.ID).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("DELETE FROM api_consumers WHERE api_id = ?", a.ID).Error; err != nil {
+				return err
+			}
 		}
 		if err := tx.Where("group_id = ?", id).Delete(&model.API{}).Error; err != nil {
 			return err

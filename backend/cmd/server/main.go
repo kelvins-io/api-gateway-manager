@@ -50,14 +50,18 @@ func main() {
 	groupSvc := service.NewGroupService(db)
 	apiSvc := service.NewAPIService(db)
 	upstreamSvc := service.NewUpstreamService(db)
+	consumerSvc := service.NewConsumerService(db)
+	pluginSvc := service.NewPluginService(db)
 
 	r := router.Setup(db, jwtMgr, log, router.Handlers{
 		Auth:     handler.NewAuthHandler(authSvc),
 		Space:    handler.NewSpaceHandler(spaceSvc),
 		Gateway:  handler.NewGatewayHandler(gatewaySvc),
-		Group:    handler.NewGroupHandler(groupSvc),
+		Group:    handler.NewGroupHandler(groupSvc, consumerSvc),
 		API:      handler.NewAPIHandler(apiSvc),
 		Upstream: handler.NewUpstreamHandler(upstreamSvc),
+		Consumer: handler.NewConsumerHandler(consumerSvc),
+		Plugin:   handler.NewPluginHandler(pluginSvc),
 		APISvc:   apiSvc,
 		GroupSvc: groupSvc,
 	})

@@ -32,6 +32,19 @@ func (h *APIHandler) Create(c *gin.Context) {
 	response.OK(c, api)
 }
 
+func (h *APIHandler) ListBySpace(c *gin.Context) {
+	spaceID, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	list, err := h.svc.ListBySpace(spaceID)
+	if err != nil {
+		mapError(c, err)
+		return
+	}
+	response.OK(c, list)
+}
+
 func (h *APIHandler) List(c *gin.Context) {
 	groupID, ok := parseID(c, "gid")
 	if !ok {
@@ -68,7 +81,7 @@ func (h *APIHandler) Update(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	api, err := h.svc.Update(id, in)
+	api, err := h.svc.Update(c.Request.Context(), id, in)
 	if err != nil {
 		mapError(c, err)
 		return

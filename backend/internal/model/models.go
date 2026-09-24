@@ -96,6 +96,9 @@ type API struct {
 	ServiceWriteTimeout   int            `gorm:"not null;default:60000" json:"service_write_timeout"`
 	ServiceReadTimeout    int            `gorm:"not null;default:60000" json:"service_read_timeout"`
 	AccessStripPath       bool           `gorm:"default:true" json:"access_strip_path"`
+	AuthEnabled           bool           `gorm:"not null;default:false" json:"auth_enabled"`
+	AuthPlugin            string         `gorm:"size:32;not null;default:''" json:"auth_plugin"`
+	AuthConfig            datatypes.JSON `gorm:"type:jsonb" json:"auth_config"`
 	Status                string         `gorm:"size:32;not null;default:draft" json:"status"`
 	CurrentVersion        string         `gorm:"size:32" json:"current_version"`
 	KongServiceID         string         `gorm:"size:64" json:"kong_service_id"`
@@ -103,7 +106,25 @@ type API struct {
 	CreatedAt             time.Time      `json:"created_at"`
 	UpdatedAt             time.Time      `json:"updated_at"`
 
-	Group *APIGroup `gorm:"foreignKey:GroupID" json:"group,omitempty"`
+	Group     *APIGroup  `gorm:"foreignKey:GroupID" json:"group,omitempty"`
+	Plugins   []Plugin   `gorm:"many2many:api_plugins;" json:"plugins,omitempty"`
+	Consumers []Consumer `gorm:"many2many:api_consumers;" json:"consumers,omitempty"`
+}
+
+func APIACLGroup(id uint64) string {
+	return fmt.Sprintf("G-%d", id)
+}
+
+// Plugin is a space-scoped Kong plugin template. APIs can attach many plugins.
+type Plugin struct {
+	ID        uint64         `gorm:"primaryKey" json:"id"`
+	SpaceID   uint64         `gorm:"not null;uniqueIndex:idx_space_plugin_name" json:"space_id"`
+	Name      string         `gorm:"size:128;not null;uniqueIndex:idx_space_plugin_name" json:"name"`
+	Plugin    string         `gorm:"size:64;not null" json:"plugin"`
+	Config    datatypes.JSON `gorm:"type:jsonb;not null" json:"config"`
+	Enabled   bool           `gorm:"not null;default:true" json:"enabled"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
 }
 
 type APIVersion struct {
@@ -266,6 +287,45 @@ type UpstreamGateway struct {
 
 func KongUpstreamName(spaceID uint64, name string) string {
 	return fmt.Sprintf("agm-s%d-%s", spaceID, name)
+}
+
+func KongConsumerName(spaceID uint64, username string) string {
+	return fmt.Sprintf("agm-s%d-%s", spaceID, username)
+}
+
+// Consumer is a space-scoped Kong consumer.
+type Consumer struct {
+	ID        uint64    `gorm:"primaryKey" json:"id"`
+	SpaceID   uint64    `gorm:"not null;uniqueIndex:idx_space_consumer_username" json:"space_id"`
+	Username  string    `gorm:"size:128;not null;uniqueIndex:idx_space_consumer_username" json:"username"`
+	CustomID  string    `gorm:"size:128;not null;default:''" json:"custom_id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	Credentials []ConsumerCredential `gorm:"foreignKey:ConsumerID" json:"credentials,omitempty"`
+	Gateways    []ConsumerGateway    `gorm:"foreignKey:ConsumerID" json:"-"`
+	APIs        []API                `gorm:"many2many:api_consumers;" json:"apis,omitempty"`
+	Space       *Space               `gorm:"foreignKey:SpaceID" json:"space,omitempty"`
+}
+
+// ConsumerCredential is a Kong credential or ACL group belonging to a consumer.
+type ConsumerCredential struct {
+	ID         uint64         `gorm:"primaryKey" json:"id"`
+	ConsumerID uint64         `gorm:"not null;index" json:"consumer_id"`
+	Plugin     string         `gorm:"size:32;not null" json:"plugin"`
+	Config     datatypes.JSON `gorm:"type:jsonb;not null" json:"config"`
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
+}
+
+// ConsumerGateway records the Kong consumer id on each gateway the space uses.
+type ConsumerGateway struct {
+	ID             uint64    `gorm:"primaryKey" json:"id"`
+	ConsumerID     uint64    `gorm:"not null;uniqueIndex:idx_consumer_gateway" json:"consumer_id"`
+	GatewayID      uint64    `gorm:"not null;uniqueIndex:idx_consumer_gateway" json:"gateway_id"`
+	KongConsumerID string    `gorm:"size:64" json:"kong_consumer_id"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // SplitPaths returns normalized path list from a comma/newline separated string.

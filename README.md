@@ -63,6 +63,18 @@ npm run dev
 - 字段：网关名、Admin API、Domain（`IP:端口` 或 `域名:端口`）、网络区域
 - 示例：`http://localhost:18001` / 网络区域 `内网` 或 `DMZ`
 
+### Consumers
+
+- 隶属于某个空间，字段为用户名、Custom ID，以及凭证（key-auth、basic-auth、jwt、hmac-auth、acl）
+- 保存后同步到该空间分组已绑定的网关；分组增删或更换网关时会重新同步
+- 写入 Kong 的用户名带空间前缀，避免多个空间共用同一网关时冲突
+
+### Plugins
+
+- 隶属于某个空间，可配置 rate-limiting、cors、key-auth、acl、ip-restriction 等 Kong 插件
+- API 可关联多个 Plugin；发布或更新关联后，同步到该 API 对应的 Kong Service
+- 修改或删除 Plugin 时，会更新仍在发布状态的关联 API
+
 ### API 分组
 
 - 隶属于某个空间

@@ -200,7 +200,7 @@ func (s *SpaceService) Delete(id uint64) error {
 	})
 }
 
-func (s *SpaceService) Join(spaceID, userID uint64) error {
+func (s *SpaceService) Join(spaceID uint64, userID uint64) error {
 	if _, err := s.Get(spaceID); err != nil {
 		return err
 	}
@@ -224,7 +224,7 @@ func (s *SpaceService) ListMembers(spaceID uint64) ([]model.SpaceMember, error) 
 	return members, err
 }
 
-func (s *SpaceService) UpdateMemberRole(spaceID, userID uint64, role string) error {
+func (s *SpaceService) UpdateMemberRole(spaceID uint64, userID uint64, role string) error {
 	res := s.db.Model(&model.SpaceMember{}).
 		Where("space_id = ? AND user_id = ?", spaceID, userID).
 		Update("role", role)

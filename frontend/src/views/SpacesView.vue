@@ -6,7 +6,7 @@
       <el-button @click="load">刷新</el-button>
     </div>
 
-    <el-table :data="list" v-loading="loading" stripe>
+    <el-table :data="paged" v-loading="loading" stripe>
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="name" label="名称">
         <template #default="{ row }">
@@ -24,6 +24,12 @@
         </template>
       </el-table-column>
     </el-table>
+    <ListPagination
+      v-model:page="page"
+      v-model:page-size="pageSize"
+      :total="total"
+      :page-sizes="pageSizes"
+    />
 
     <el-dialog v-model="createVisible" :title="editing ? '编辑空间' : '申请空间'" width="480px">
       <el-form :model="form" label-width="90px">
@@ -69,10 +75,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Space } from '@/types'
 import * as spaceApi from '@/api/space'
 import { useUserStore } from '@/stores/user'
+import ListPagination from '@/components/ListPagination.vue'
+import { usePagination } from '@/composables/usePagination'
 
 const store = useUserStore()
 const router = useRouter()
 const list = ref<Space[]>([])
+const { page, pageSize, total, paged, pageSizes } = usePagination(list)
 const available = ref<Space[]>([])
 const loading = ref(false)
 const joinLoading = ref(false)

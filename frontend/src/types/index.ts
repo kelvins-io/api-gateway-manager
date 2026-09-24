@@ -92,6 +92,33 @@ export interface UpstreamItem {
   targets?: UpstreamTarget[]
 }
 
+export interface ConsumerCredential {
+  id?: number
+  consumer_id?: number
+  plugin: string
+  config: Record<string, string>
+}
+
+export interface ConsumerItem {
+  id: number
+  space_id: number
+  username: string
+  custom_id: string
+  created_at?: string
+  credentials?: ConsumerCredential[]
+  apis?: { id: number; name: string }[]
+  space?: { id: number; name: string }
+}
+
+export interface PluginItem {
+  id: number
+  space_id: number
+  name: string
+  plugin: string
+  config: Record<string, unknown>
+  enabled: boolean
+}
+
 export interface ApiItem {
   id: number
   group_id: number
@@ -113,11 +140,16 @@ export interface ApiItem {
   service_write_timeout: number
   service_read_timeout: number
   access_strip_path: boolean
+  auth_enabled: boolean
+  auth_plugin: string
+  auth_config?: Record<string, unknown>
   status: string
   current_version: string
   kong_service_id?: string
   kong_route_id?: string
   group?: ApiGroup
+  plugins?: PluginItem[]
+  consumers?: ConsumerItem[]
 }
 
 export interface ApiVersion {

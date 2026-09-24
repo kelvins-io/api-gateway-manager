@@ -11,6 +11,8 @@
     <div class="toolbar">
       <el-button type="primary" :disabled="!store.currentSpaceId" @click="openCreate">新建分组</el-button>
       <el-button :disabled="!store.currentSpaceId" @click="$router.push('/upstreams')">Upstream</el-button>
+      <el-button :disabled="!store.currentSpaceId" @click="$router.push('/consumers')">Consumers</el-button>
+      <el-button :disabled="!store.currentSpaceId" @click="$router.push('/plugins')">Plugins</el-button>
       <el-button :disabled="!store.currentSpaceId" @click="load">刷新</el-button>
       <span v-if="store.currentSpace" class="hint">
         当前空间：{{ store.currentSpace.name }}
@@ -18,7 +20,7 @@
       </span>
     </div>
 
-    <el-table :data="list" v-loading="loading" stripe>
+    <el-table :data="paged" v-loading="loading" stripe>
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="name" label="分组名">
         <template #default="{ row }">
@@ -40,6 +42,12 @@
         </template>
       </el-table-column>
     </el-table>
+    <ListPagination
+      v-model:page="page"
+      v-model:page-size="pageSize"
+      :total="total"
+      :page-sizes="pageSizes"
+    />
 
     <el-dialog v-model="visible" :title="editing ? '编辑分组' : '新建分组'" width="480px">
       <el-form :model="form" label-width="90px">
@@ -72,9 +80,12 @@ import type { ApiGroup, Gateway } from '@/types'
 import * as apiMod from '@/api/api'
 import * as gatewayApi from '@/api/gateway'
 import { useUserStore } from '@/stores/user'
+import ListPagination from '@/components/ListPagination.vue'
+import { usePagination } from '@/composables/usePagination'
 
 const store = useUserStore()
 const list = ref<ApiGroup[]>([])
+const { page, pageSize, total, paged, pageSizes, resetPage } = usePagination(list)
 const gateways = ref<Pick<Gateway, 'id' | 'name' | 'network_zone'>[]>([])
 const loading = ref(false)
 const saving = ref(false)
@@ -141,7 +152,10 @@ async function onDelete(row: ApiGroup) {
   await load()
 }
 
-watch(() => store.currentSpaceId, load)
+watch(() => store.currentSpaceId, () => {
+  resetPage()
+  load()
+})
 
 onMounted(async () => {
   await loadGateways()

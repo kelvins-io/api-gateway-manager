@@ -7,7 +7,7 @@
       <span v-if="store.currentSpace" class="hint">当前空间：{{ store.currentSpace.name }}</span>
     </div>
 
-    <el-table :data="list" v-loading="loading" stripe>
+    <el-table :data="paged" v-loading="loading" stripe>
       <el-table-column prop="name" label="名称" />
       <el-table-column prop="algorithm" label="算法" width="180" />
       <el-table-column label="Target">
@@ -24,6 +24,12 @@
         </template>
       </el-table-column>
     </el-table>
+    <ListPagination
+      v-model:page="page"
+      v-model:page-size="pageSize"
+      :total="total"
+      :page-sizes="pageSizes"
+    />
 
     <el-dialog v-model="visible" :title="editing ? '编辑 Upstream' : '新建 Upstream'" width="680px">
       <el-form :model="form" label-width="140px">
@@ -112,9 +118,12 @@ import type { UpstreamHealthSide, UpstreamItem } from '@/types'
 import * as apiMod from '@/api/api'
 import { useUserStore } from '@/stores/user'
 import HealthFields from '@/components/HealthFields.vue'
+import ListPagination from '@/components/ListPagination.vue'
+import { usePagination } from '@/composables/usePagination'
 
 const store = useUserStore()
 const list = ref<UpstreamItem[]>([])
+const { page, pageSize, total, paged, pageSizes } = usePagination(list)
 const loading = ref(false)
 const saving = ref(false)
 const visible = ref(false)

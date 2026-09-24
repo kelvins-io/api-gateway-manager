@@ -7,11 +7,12 @@ import (
 )
 
 type GroupHandler struct {
-	svc *service.GroupService
+	svc       *service.GroupService
+	consumers *service.ConsumerService
 }
 
-func NewGroupHandler(svc *service.GroupService) *GroupHandler {
-	return &GroupHandler{svc: svc}
+func NewGroupHandler(svc *service.GroupService, consumers *service.ConsumerService) *GroupHandler {
+	return &GroupHandler{svc: svc, consumers: consumers}
 }
 
 func (h *GroupHandler) Create(c *gin.Context) {
@@ -26,6 +27,10 @@ func (h *GroupHandler) Create(c *gin.Context) {
 	}
 	group, err := h.svc.Create(spaceID, in)
 	if err != nil {
+		mapError(c, err)
+		return
+	}
+	if err := h.consumers.ReconcileSpace(c.Request.Context(), spaceID); err != nil {
 		mapError(c, err)
 		return
 	}
@@ -73,6 +78,10 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		mapError(c, err)
 		return
 	}
+	if err := h.consumers.ReconcileSpace(c.Request.Context(), group.SpaceID); err != nil {
+		mapError(c, err)
+		return
+	}
 	response.OK(c, group)
 }
 
@@ -81,7 +90,16 @@ func (h *GroupHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
+	group, err := h.svc.Get(id)
+	if err != nil {
+		mapError(c, err)
+		return
+	}
 	if err := h.svc.Delete(id); err != nil {
+		mapError(c, err)
+		return
+	}
+	if err := h.consumers.ReconcileSpace(c.Request.Context(), group.SpaceID); err != nil {
 		mapError(c, err)
 		return
 	}

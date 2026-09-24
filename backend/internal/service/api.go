@@ -25,43 +25,53 @@ func NewAPIService(db *gorm.DB) *APIService {
 }
 
 type CreateAPIInput struct {
-	Name                  string              `json:"name" binding:"required,min=1,max=128"`
-	AccessPath            string              `json:"access_path" binding:"required,min=1,max=2048"`
-	AccessMethods         string              `json:"access_methods" binding:"required"`
-	AccessProtocols       string              `json:"access_protocols"`
-	AccessHosts           string              `json:"access_hosts"`
-	AccessHeaders         map[string][]string `json:"access_headers"`
-	ServiceProtocol       string              `json:"service_protocol"`
-	ServiceHostKind       string              `json:"service_host_kind"`
-	ServiceHost           string              `json:"service_host"`
-	ServiceUpstreamID     *uint64             `json:"service_upstream_id"`
-	ServicePort           int                 `json:"service_port"`
-	ServicePath           string              `json:"service_path"`
-	ServiceRetries        *int                `json:"service_retries"`
-	ServiceConnectTimeout *int                `json:"service_connect_timeout"`
-	ServiceWriteTimeout   *int                `json:"service_write_timeout"`
-	ServiceReadTimeout    *int                `json:"service_read_timeout"`
-	AccessStripPath       *bool               `json:"access_strip_path"`
+	Name                  string                 `json:"name" binding:"required,min=1,max=128"`
+	AccessPath            string                 `json:"access_path" binding:"required,min=1,max=2048"`
+	AccessMethods         string                 `json:"access_methods" binding:"required"`
+	AccessProtocols       string                 `json:"access_protocols"`
+	AccessHosts           string                 `json:"access_hosts"`
+	AccessHeaders         map[string][]string    `json:"access_headers"`
+	ServiceProtocol       string                 `json:"service_protocol"`
+	ServiceHostKind       string                 `json:"service_host_kind"`
+	ServiceHost           string                 `json:"service_host"`
+	ServiceUpstreamID     *uint64                `json:"service_upstream_id"`
+	ServicePort           int                    `json:"service_port"`
+	ServicePath           string                 `json:"service_path"`
+	ServiceRetries        *int                   `json:"service_retries"`
+	ServiceConnectTimeout *int                   `json:"service_connect_timeout"`
+	ServiceWriteTimeout   *int                   `json:"service_write_timeout"`
+	ServiceReadTimeout    *int                   `json:"service_read_timeout"`
+	AccessStripPath       *bool                  `json:"access_strip_path"`
+	AuthEnabled           bool                   `json:"auth_enabled"`
+	AuthPlugin            string                 `json:"auth_plugin"`
+	AuthConfig            map[string]interface{} `json:"auth_config"`
+	PluginIDs             []uint64               `json:"plugin_ids"`
+	ConsumerIDs           []uint64               `json:"consumer_ids"`
 }
 
 type UpdateAPIInput struct {
-	Name                  string              `json:"name" binding:"omitempty,min=1,max=128"`
-	AccessPath            string              `json:"access_path" binding:"omitempty,min=1,max=2048"`
-	AccessMethods         string              `json:"access_methods"`
-	AccessProtocols       string              `json:"access_protocols"`
-	AccessHosts           string              `json:"access_hosts"`
-	AccessHeaders         map[string][]string `json:"access_headers"`
-	ServiceProtocol       string              `json:"service_protocol"`
-	ServiceHostKind       string              `json:"service_host_kind"`
-	ServiceHost           string              `json:"service_host"`
-	ServiceUpstreamID     *uint64             `json:"service_upstream_id"`
-	ServicePort           *int                `json:"service_port"`
-	ServicePath           string              `json:"service_path"`
-	ServiceRetries        *int                `json:"service_retries"`
-	ServiceConnectTimeout *int                `json:"service_connect_timeout"`
-	ServiceWriteTimeout   *int                `json:"service_write_timeout"`
-	ServiceReadTimeout    *int                `json:"service_read_timeout"`
-	AccessStripPath       *bool               `json:"access_strip_path"`
+	Name                  string                 `json:"name" binding:"omitempty,min=1,max=128"`
+	AccessPath            string                 `json:"access_path" binding:"omitempty,min=1,max=2048"`
+	AccessMethods         string                 `json:"access_methods"`
+	AccessProtocols       string                 `json:"access_protocols"`
+	AccessHosts           string                 `json:"access_hosts"`
+	AccessHeaders         map[string][]string    `json:"access_headers"`
+	ServiceProtocol       string                 `json:"service_protocol"`
+	ServiceHostKind       string                 `json:"service_host_kind"`
+	ServiceHost           string                 `json:"service_host"`
+	ServiceUpstreamID     *uint64                `json:"service_upstream_id"`
+	ServicePort           *int                   `json:"service_port"`
+	ServicePath           string                 `json:"service_path"`
+	ServiceRetries        *int                   `json:"service_retries"`
+	ServiceConnectTimeout *int                   `json:"service_connect_timeout"`
+	ServiceWriteTimeout   *int                   `json:"service_write_timeout"`
+	ServiceReadTimeout    *int                   `json:"service_read_timeout"`
+	AccessStripPath       *bool                  `json:"access_strip_path"`
+	AuthEnabled           *bool                  `json:"auth_enabled"`
+	AuthPlugin            string                 `json:"auth_plugin"`
+	AuthConfig            map[string]interface{} `json:"auth_config"`
+	PluginIDs             *[]uint64              `json:"plugin_ids"`
+	ConsumerIDs           *[]uint64              `json:"consumer_ids"`
 }
 
 type SwitchVersionInput struct {
@@ -122,21 +132,35 @@ func (s *APIService) Create(groupID uint64, in CreateAPIInput) (*model.API, erro
 		AccessStripPath:       strip,
 		Status:                model.APIStatusDraft,
 	}
+	if err := applyAuthFields(api, in.AuthEnabled, in.AuthPlugin, in.AuthConfig); err != nil {
+		return nil, err
+	}
 	if err := s.db.Create(api).Error; err != nil {
+		return nil, err
+	}
+	if err := s.replacePlugins(api.ID, group.SpaceID, in.PluginIDs); err != nil {
 		return nil, err
 	}
 	return s.Get(api.ID)
 }
 
+func (s *APIService) ListBySpace(spaceID uint64) ([]model.API, error) {
+	var list []model.API
+	err := s.db.Joins("JOIN api_groups ON api_groups.id = apis.group_id").
+		Where("api_groups.space_id = ? AND apis.auth_enabled = ?", spaceID, true).
+		Order("apis.id desc").Find(&list).Error
+	return list, err
+}
+
 func (s *APIService) ListByGroup(groupID uint64) ([]model.API, error) {
 	var list []model.API
-	err := s.db.Preload("Group").Preload("Group.Gateway").Preload("Group.Space").Where("group_id = ?", groupID).Order("id desc").Find(&list).Error
+	err := s.db.Preload("Plugins").Preload("Consumers.Space").Preload("Group").Preload("Group.Gateway").Preload("Group.Space").Where("group_id = ?", groupID).Order("id desc").Find(&list).Error
 	return list, err
 }
 
 func (s *APIService) Get(id uint64) (*model.API, error) {
 	var api model.API
-	if err := s.db.Preload("Group").Preload("Group.Gateway").First(&api, id).Error; err != nil {
+	if err := s.db.Preload("Plugins").Preload("Consumers.Credentials").Preload("Group").Preload("Group.Gateway").First(&api, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}
@@ -145,7 +169,7 @@ func (s *APIService) Get(id uint64) (*model.API, error) {
 	return &api, nil
 }
 
-func (s *APIService) Update(id uint64, in UpdateAPIInput) (*model.API, error) {
+func (s *APIService) Update(ctx context.Context, id uint64, in UpdateAPIInput) (*model.API, error) {
 	api, err := s.Get(id)
 	if err != nil {
 		return nil, err
@@ -224,12 +248,48 @@ func (s *APIService) Update(id uint64, in UpdateAPIInput) (*model.API, error) {
 	if in.AccessStripPath != nil {
 		updates["access_strip_path"] = *in.AccessStripPath
 	}
+	if in.AuthEnabled != nil {
+		if err := validateAuthUpdate(api.AuthEnabled, api.AuthPlugin, *in.AuthEnabled, in.AuthPlugin); err != nil {
+			return nil, err
+		}
+		if api.AuthEnabled {
+			if err := applyAuthFields(api, true, api.AuthPlugin, in.AuthConfig); err != nil {
+				return nil, err
+			}
+			updates["auth_config"] = api.AuthConfig
+		}
+	}
 	if len(updates) > 0 {
 		if err := s.db.Model(api).Updates(updates).Error; err != nil {
 			return nil, err
 		}
 	}
-	return s.Get(id)
+	if in.PluginIDs != nil {
+		if api.Group == nil {
+			return nil, ErrNotFound
+		}
+		if err := s.replacePlugins(id, api.Group.SpaceID, *in.PluginIDs); err != nil {
+			return nil, err
+		}
+	}
+	if in.AuthEnabled != nil && !api.AuthEnabled {
+		if api.Group == nil {
+			return nil, ErrNotFound
+		}
+		if err := s.replaceConsumers(ctx, id, api.Group.SpaceID, nil); err != nil {
+			return nil, err
+		}
+	}
+	saved, err := s.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if in.PluginIDs != nil || in.ConsumerIDs != nil || in.AuthEnabled != nil {
+		if err := applyAPIPlugins(ctx, saved); err != nil {
+			return nil, err
+		}
+	}
+	return saved, nil
 }
 
 func (s *APIService) Delete(id uint64) error {
@@ -242,6 +302,12 @@ func (s *APIService) Delete(id uint64) error {
 	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("api_id = ?", id).Delete(&model.APIVersion{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM api_plugins WHERE api_id = ?", id).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM api_consumers WHERE api_id = ?", id).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&model.API{}, id).Error
@@ -300,7 +366,14 @@ func (s *APIService) Publish(ctx context.Context, id uint64) (*model.API, error)
 	if err != nil {
 		return nil, err
 	}
-	return s.Get(id)
+	saved, err := s.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := applyAPIPlugins(ctx, saved); err != nil {
+		return nil, err
+	}
+	return saved, nil
 }
 
 func (s *APIService) Offline(ctx context.Context, id uint64) (*model.API, error) {
@@ -432,7 +505,14 @@ func (s *APIService) SwitchVersion(ctx context.Context, id uint64, version strin
 	}).Error; err != nil {
 		return nil, err
 	}
-	return s.Get(id)
+	saved, err := s.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := applyAPIPlugins(ctx, saved); err != nil {
+		return nil, err
+	}
+	return saved, nil
 }
 
 func (s *APIService) ListVersions(apiID uint64) ([]model.APIVersion, error) {
@@ -461,6 +541,141 @@ func (s *APIService) withSpacePrefix(spaceID uint64, paths []string) ([]string, 
 		return nil, err
 	}
 	return model.ApplyPathPrefix(space.Prefix, paths), nil
+}
+
+func (s *APIService) replacePlugins(apiID, spaceID uint64, ids []uint64) error {
+	ids = uniqueIDs(ids)
+	plugins := make([]model.Plugin, 0, len(ids))
+	if len(ids) > 0 {
+		if err := s.db.Where("space_id = ? AND id IN ?", spaceID, ids).Find(&plugins).Error; err != nil {
+			return err
+		}
+		if len(plugins) != len(ids) {
+			return fmt.Errorf("%w: plugin not found in this space", ErrBadRequest)
+		}
+	}
+	api := &model.API{ID: apiID}
+	return s.db.Model(api).Association("Plugins").Replace(plugins)
+}
+
+func validateAuthUpdate(currentEnabled bool, currentPlugin string, nextEnabled bool, nextPlugin string) error {
+	if nextEnabled != currentEnabled {
+		return fmt.Errorf("%w: auth cannot be enabled or disabled after creation", ErrBadRequest)
+	}
+	if currentEnabled && strings.TrimSpace(strings.ToLower(nextPlugin)) != currentPlugin {
+		return fmt.Errorf("%w: auth type cannot be changed", ErrBadRequest)
+	}
+	return nil
+}
+
+func applyAuthFields(api *model.API, enabled bool, plugin string, cfg map[string]interface{}) error {
+	if !enabled {
+		api.AuthEnabled = false
+		api.AuthPlugin = ""
+		api.AuthConfig = datatypes.JSON([]byte("null"))
+		return nil
+	}
+	plugin = strings.TrimSpace(strings.ToLower(plugin))
+	switch plugin {
+	case "key-auth", "basic-auth", "jwt", "hmac-auth":
+	default:
+		return fmt.Errorf("%w: unsupported auth plugin", ErrBadRequest)
+	}
+	normalized, err := normalizePluginConfig(plugin, cfg)
+	if err != nil {
+		return err
+	}
+	raw, err := json.Marshal(normalized)
+	if err != nil {
+		return err
+	}
+	api.AuthEnabled = true
+	api.AuthPlugin = plugin
+	api.AuthConfig = datatypes.JSON(raw)
+	return nil
+}
+
+func (s *APIService) replaceConsumers(ctx context.Context, apiID, spaceID uint64, ids []uint64) error {
+	var api model.API
+	if err := s.db.Preload("Consumers").First(&api, apiID).Error; err != nil {
+		return err
+	}
+	ids = uniqueIDs(ids)
+	if !api.AuthEnabled {
+		ids = nil
+	}
+	consumers := make([]model.Consumer, 0, len(ids))
+	if len(ids) > 0 {
+		if err := s.db.Preload("Credentials").Where("space_id = ? AND id IN ?", spaceID, ids).Find(&consumers).Error; err != nil {
+			return err
+		}
+		if len(consumers) != len(ids) {
+			return fmt.Errorf("%w: consumer not found in this space", ErrBadRequest)
+		}
+		for _, c := range consumers {
+			if !consumerHasPlugin(c, api.AuthPlugin) {
+				return fmt.Errorf("%w: consumer %s has no %s credential", ErrBadRequest, c.Username, api.AuthPlugin)
+			}
+		}
+	}
+	oldIDs := map[uint64]struct{}{}
+	for _, c := range api.Consumers {
+		oldIDs[c.ID] = struct{}{}
+	}
+	newIDs := map[uint64]struct{}{}
+	for _, id := range ids {
+		newIDs[id] = struct{}{}
+	}
+	if err := s.db.Model(&model.API{ID: apiID}).Association("Consumers").Replace(consumers); err != nil {
+		return err
+	}
+	group := model.APIACLGroup(apiID)
+	svc := NewConsumerService(s.db)
+	for _, c := range api.Consumers {
+		if _, ok := newIDs[c.ID]; ok {
+			continue
+		}
+		if err := svc.setACLGroup(ctx, c.ID, group, false); err != nil {
+			return err
+		}
+	}
+	for _, c := range consumers {
+		if _, ok := oldIDs[c.ID]; ok {
+			if err := svc.setACLGroup(ctx, c.ID, group, true); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := svc.setACLGroup(ctx, c.ID, group, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func consumerHasPlugin(c model.Consumer, plugin string) bool {
+	for _, cred := range c.Credentials {
+		if cred.Plugin == plugin {
+			return true
+		}
+	}
+	return false
+}
+
+func uniqueIDs(ids []uint64) []uint64 {
+	seen := map[uint64]struct{}{}
+	out := make([]uint64, 0, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 func (s *APIService) getGroup(id uint64) (*model.APIGroup, error) {

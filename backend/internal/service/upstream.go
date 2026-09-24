@@ -31,9 +31,9 @@ type TargetInput struct {
 }
 
 type HealthInput struct {
-	Active  *HealthSide `json:"active"`
-	Passive *HealthSide `json:"passive"`
-	Threshold *float64 `json:"threshold"`
+	Active    *HealthSide `json:"active"`
+	Passive   *HealthSide `json:"passive"`
+	Threshold *float64    `json:"threshold"`
 }
 
 type HealthSide struct {
@@ -53,24 +53,24 @@ type HealthSide struct {
 }
 
 type UpsertUpstreamInput struct {
-	Name                   string       `json:"name" binding:"required"`
-	Algorithm              string       `json:"algorithm"`
-	Slots                  int          `json:"slots"`
-	HashOn                 string       `json:"hash_on"`
-	HashFallback           string       `json:"hash_fallback"`
-	HashOnHeader           string       `json:"hash_on_header"`
-	HashFallbackHeader     string       `json:"hash_fallback_header"`
-	HashOnCookie           string       `json:"hash_on_cookie"`
-	HashOnCookiePath       string       `json:"hash_on_cookie_path"`
-	HashOnQueryArg         string       `json:"hash_on_query_arg"`
-	HashFallbackQueryArg   string       `json:"hash_fallback_query_arg"`
-	HashOnURICapture       string       `json:"hash_on_uri_capture"`
-	HashFallbackURICapture string       `json:"hash_fallback_uri_capture"`
-	Healthchecks           *HealthInput `json:"healthchecks"`
+	Name                   string        `json:"name" binding:"required"`
+	Algorithm              string        `json:"algorithm"`
+	Slots                  int           `json:"slots"`
+	HashOn                 string        `json:"hash_on"`
+	HashFallback           string        `json:"hash_fallback"`
+	HashOnHeader           string        `json:"hash_on_header"`
+	HashFallbackHeader     string        `json:"hash_fallback_header"`
+	HashOnCookie           string        `json:"hash_on_cookie"`
+	HashOnCookiePath       string        `json:"hash_on_cookie_path"`
+	HashOnQueryArg         string        `json:"hash_on_query_arg"`
+	HashFallbackQueryArg   string        `json:"hash_fallback_query_arg"`
+	HashOnURICapture       string        `json:"hash_on_uri_capture"`
+	HashFallbackURICapture string        `json:"hash_fallback_uri_capture"`
+	Healthchecks           *HealthInput  `json:"healthchecks"`
 	Targets                []TargetInput `json:"targets"`
 }
 
-func (s *UpstreamService) EnsureSpace(id, spaceID uint64) error {
+func (s *UpstreamService) EnsureSpace(id uint64, spaceID uint64) error {
 	var count int64
 	if err := s.db.Model(&model.Upstream{}).Where("id = ? AND space_id = ?", id, spaceID).Count(&count).Error; err != nil {
 		return err

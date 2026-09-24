@@ -52,7 +52,7 @@ const menuKey = computed(() => `menu-${user.value?.role || 'none'}-${isSystemAdm
 
 const active = computed(() => {
   if (route.path.startsWith('/gateways')) return '/gateways'
-  if (route.path.startsWith('/spaces') || route.path.startsWith('/groups') || route.path.startsWith('/upstreams')) return '/spaces'
+  if (route.path.startsWith('/spaces') || route.path.startsWith('/groups') || route.path.startsWith('/upstreams') || route.path.startsWith('/consumers') || route.path.startsWith('/plugins')) return '/spaces'
   return route.path
 })
 
@@ -61,6 +61,8 @@ const title = computed(() => {
   if (route.name === 'groups') return 'API 分组'
   if (route.name === 'apis') return 'API 管理'
   if (route.name === 'upstreams') return 'Upstream'
+  if (route.name === 'consumers') return 'Consumers'
+  if (route.name === 'plugins') return 'Plugins'
   if (route.name === 'space-members') return '空间成员'
   return '空间管理'
 })

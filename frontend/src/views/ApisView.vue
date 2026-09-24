@@ -6,7 +6,7 @@
       <el-button @click="load">刷新</el-button>
     </div>
 
-    <el-table :data="list" v-loading="loading" stripe>
+    <el-table :data="paged" v-loading="loading" stripe>
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column prop="name" label="名称" min-width="120" />
       <el-table-column label="接入协议" width="160">
@@ -35,24 +35,63 @@
           {{ upstreamLabel(row) }}
         </template>
       </el-table-column>
+      <el-table-column label="认证" width="120">
+        <template #default="{ row }">
+          <span v-if="row.auth_enabled">{{ row.auth_plugin }}</span>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
           <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="current_version" label="当前版本" width="100" />
-      <el-table-column label="操作" width="360" fixed="right">
+      <el-table-column label="操作" width="520" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button link type="success" @click="onPublish(row)">发布</el-button>
           <el-button link type="warning" @click="onOffline(row)" :disabled="row.status !== 'published'">下线</el-button>
           <el-button link type="primary" @click="openVersions(row)">版本</el-button>
+          <el-button link type="primary" @click="openPlugins(row)">Plugins</el-button>
+          <el-button link type="primary" @click="openConsumers(row)">Consumers</el-button>
           <el-button link type="danger" @click="onDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
+    <ListPagination
+      v-model:page="page"
+      v-model:page-size="pageSize"
+      :total="total"
+      :page-sizes="pageSizes"
+    />
 
-    <el-dialog v-model="visible" :title="editing ? '编辑 API' : '新建 API'" width="560px">
+    <el-dialog v-model="pluginVisible" :title="pluginTitle" width="720px">
+      <el-table :data="pluginRows" empty-text="暂无绑定插件" stripe>
+        <el-table-column prop="name" label="名称" />
+        <el-table-column prop="plugin" label="类型" width="160" />
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">{{ row.enabled ? '启用' : '停用' }}</template>
+        </el-table-column>
+        <el-table-column label="配置" min-width="220">
+          <template #default="{ row }">{{ pluginSummary(row) }}</template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <el-dialog v-model="consumerVisible" :title="consumerTitle" width="640px">
+      <el-table :data="consumerRows" empty-text="暂无关联 Consumer" stripe>
+        <el-table-column prop="username" label="名称" />
+        <el-table-column label="所属空间">
+          <template #default="{ row }">{{ row.space?.name || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="创建时间" width="180">
+          <template #default="{ row }">{{ formatTime(row.created_at || '') }}</template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <el-dialog v-model="visible" body-class="api-dialog-body" :title="editing ? '编辑 API' : '新建 API'" width="640px">
       <el-form :model="form" label-width="120px">
         <el-form-item label="名称">
           <el-input v-model="form.name" />
@@ -126,6 +165,33 @@
         <el-form-item label="后端服务Path">
           <el-input v-model="form.service_path" placeholder="/" />
         </el-form-item>
+        <el-form-item label="Plugins">
+          <el-select v-model="form.plugin_ids" multiple filterable style="width: 100%" placeholder="可关联多个本空间 Plugin">
+            <el-option v-for="p in plugins" :key="p.id" :label="`${p.name} (${p.plugin})`" :value="p.id" :disabled="!p.enabled" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="启用认证">
+          <el-switch v-model="form.auth_enabled" :disabled="!!editing" />
+        </el-form-item>
+        <template v-if="form.auth_enabled">
+          <el-form-item label="认证类型">
+            <el-select v-model="form.auth_plugin" style="width: 100%" :disabled="!!editing">
+              <el-option v-for="p in authPlugins" :key="p" :label="p" :value="p" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="form.auth_plugin === 'key-auth'" label="Key 名称">
+            <el-input v-model="form.auth_key_names" placeholder="apikey，多个用逗号分隔" />
+          </el-form-item>
+          <el-form-item v-if="form.auth_plugin === 'jwt'" label="Header">
+            <el-input v-model="form.auth_header_names" placeholder="authorization" />
+          </el-form-item>
+          <el-form-item v-if="form.auth_plugin === 'hmac-auth'" label="Clock Skew">
+            <el-input-number v-model="form.auth_clock_skew" :min="0" />
+          </el-form-item>
+          <el-form-item v-if="form.auth_plugin !== 'jwt'" label="隐藏凭证">
+            <el-switch v-model="form.auth_hide_credentials" />
+          </el-form-item>
+        </template>
         <el-collapse>
           <el-collapse-item title="后端服务重试与超时" name="advanced">
             <el-form-item label="Retries">
@@ -218,28 +284,39 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { ApiItem, ApiVersion, UpstreamItem } from '@/types'
+import type { ApiItem, ApiVersion, ConsumerItem, PluginItem, UpstreamItem } from '@/types'
 import * as apiMod from '@/api/api'
 import { useUserStore } from '@/stores/user'
+import ListPagination from '@/components/ListPagination.vue'
+import { usePagination } from '@/composables/usePagination'
 
 const route = useRoute()
 const store = useUserStore()
 const gid = Number(route.params.gid)
 const spacePrefix = computed(() => (store.currentSpace?.prefix || '').replace(/\/$/, ''))
 const list = ref<ApiItem[]>([])
+const { page, pageSize, total, paged, pageSizes } = usePagination(list)
 const versions = ref<ApiVersion[]>([])
 const loading = ref(false)
 const saving = ref(false)
 const versionLoading = ref(false)
 const visible = ref(false)
 const versionVisible = ref(false)
+const consumerVisible = ref(false)
+const consumerTitle = ref('Consumers')
+const consumerRows = ref<ConsumerItem[]>([])
+const pluginVisible = ref(false)
+const pluginTitle = ref('Plugins')
+const pluginRows = ref<PluginItem[]>([])
 const detailVisible = ref(false)
 const editing = ref<ApiItem | null>(null)
 const currentApi = ref<ApiItem | null>(null)
 const detailVersion = ref<ApiVersion | null>(null)
+const authPlugins = ['key-auth', 'basic-auth', 'jwt', 'hmac-auth']
 const methodOptions = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']
 const protocolOptions = ['http', 'https', 'grpc', 'grpcs']
 const upstreams = ref<UpstreamItem[]>([])
+const plugins = ref<PluginItem[]>([])
 
 const form = reactive({
   name: '',
@@ -259,7 +336,34 @@ const form = reactive({
   service_write_timeout: 60000,
   service_read_timeout: 60000,
   access_strip_path: true,
+  plugin_ids: [] as number[],
+  auth_enabled: false,
+  auth_plugin: 'key-auth',
+  auth_key_names: 'apikey',
+  auth_header_names: 'authorization',
+  auth_hide_credentials: false,
+  auth_clock_skew: 300,
 })
+
+function authConfig() {
+  if (!form.auth_enabled) return {}
+  if (form.auth_plugin === 'key-auth') {
+    return {
+      key_names: form.auth_key_names,
+      hide_credentials: form.auth_hide_credentials,
+      key_in_header: true,
+      key_in_query: true,
+      key_in_body: false,
+    }
+  }
+  if (form.auth_plugin === 'jwt') {
+    return { header_names: form.auth_header_names }
+  }
+  if (form.auth_plugin === 'hmac-auth') {
+    return { hide_credentials: form.auth_hide_credentials, clock_skew: form.auth_clock_skew }
+  }
+  return { hide_credentials: form.auth_hide_credentials }
+}
 
 const pathPlaceholder = computed(() =>
   spacePrefix.value
@@ -450,6 +554,27 @@ function formatTime(raw: string) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
+function openConsumers(row: ApiItem) {
+  consumerTitle.value = `${row.name} 的 Consumers`
+  consumerRows.value = row.consumers || []
+  consumerVisible.value = true
+}
+
+function pluginSummary(row: PluginItem) {
+  const cfg = row.config || {}
+  const parts = Object.entries(cfg)
+    .filter(([, v]) => v !== '' && v !== 0 && v !== false && !(Array.isArray(v) && !v.length))
+    .slice(0, 4)
+    .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : v}`)
+  return parts.join('，') || '-'
+}
+
+function openPlugins(row: ApiItem) {
+  pluginTitle.value = `${row.name} 的 Plugins`
+  pluginRows.value = row.plugins || []
+  pluginVisible.value = true
+}
+
 function openDetail(row: ApiVersion) {
   detailVersion.value = row
   detailVisible.value = true
@@ -474,6 +599,13 @@ function openCreate() {
   form.headerList = []
   resetService()
   form.access_strip_path = true
+  form.plugin_ids = []
+  form.auth_enabled = false
+  form.auth_plugin = 'key-auth'
+  form.auth_key_names = 'apikey'
+  form.auth_header_names = 'authorization'
+  form.auth_hide_credentials = false
+  form.auth_clock_skew = 300
   visible.value = true
 }
 
@@ -496,6 +628,14 @@ function openEdit(row: ApiItem) {
   form.service_write_timeout = row.service_write_timeout ?? 60000
   form.service_read_timeout = row.service_read_timeout ?? 60000
   form.access_strip_path = row.access_strip_path
+  form.plugin_ids = (row.plugins || []).map((p) => p.id)
+  form.auth_enabled = !!row.auth_enabled
+  form.auth_plugin = row.auth_plugin || 'key-auth'
+  const cfg = row.auth_config || {}
+  form.auth_key_names = Array.isArray(cfg.key_names) ? cfg.key_names.join(',') : 'apikey'
+  form.auth_header_names = Array.isArray(cfg.header_names) ? cfg.header_names.join(',') : 'authorization'
+  form.auth_hide_credentials = !!cfg.hide_credentials
+  form.auth_clock_skew = Number(cfg.clock_skew || 300)
   visible.value = true
 }
 
@@ -539,6 +679,10 @@ async function save() {
     service_write_timeout: form.service_write_timeout,
     service_read_timeout: form.service_read_timeout,
     access_strip_path: form.access_strip_path,
+    plugin_ids: form.plugin_ids,
+    auth_enabled: form.auth_enabled,
+    auth_plugin: form.auth_enabled ? form.auth_plugin : '',
+    auth_config: authConfig(),
   }
   saving.value = true
   try {
@@ -600,6 +744,7 @@ async function onSwitch(version: string) {
 onMounted(async () => {
   if (store.currentSpaceId) {
     upstreams.value = (await apiMod.listUpstreams(store.currentSpaceId)) || []
+    plugins.value = (await apiMod.listPlugins(store.currentSpaceId)) || []
   }
   await load()
 })
@@ -633,5 +778,12 @@ onMounted(async () => {
   gap: 8px;
   margin-bottom: 8px;
   width: 100%;
+}
+</style>
+
+<style>
+.api-dialog-body {
+  max-height: 52vh;
+  overflow: auto;
 }
 </style>

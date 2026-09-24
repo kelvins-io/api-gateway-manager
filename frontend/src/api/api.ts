@@ -1,5 +1,5 @@
 import http, { request } from './http'
-import type { ApiGroup, ApiItem, ApiVersion, UpstreamItem } from '@/types'
+import type { ApiGroup, ApiItem, ApiVersion, ConsumerItem, PluginItem, UpstreamItem } from '@/types'
 
 export function listGroups(spaceId: number) {
   return request<ApiGroup[]>(() => http.get(`/spaces/${spaceId}/groups`))
@@ -15,6 +15,10 @@ export function updateGroup(gid: number, data: { name?: string; gateway_id?: num
 
 export function deleteGroup(gid: number) {
   return request<null>(() => http.delete(`/groups/${gid}`))
+}
+
+export function listSpaceApis(spaceId: number) {
+  return request<ApiItem[]>(() => http.get(`/spaces/${spaceId}/apis`))
 }
 
 export function listApis(gid: number) {
@@ -63,4 +67,44 @@ export function updateUpstream(spaceId: number, id: number, data: Partial<Upstre
 
 export function deleteUpstream(spaceId: number, id: number) {
   return request<null>(() => http.delete(`/spaces/${spaceId}/upstreams/${id}`))
+}
+
+export function listConsumers(spaceId: number) {
+  return request<ConsumerItem[]>(() => http.get(`/spaces/${spaceId}/consumers`))
+}
+
+export function createConsumer(spaceId: number, data: Partial<ConsumerItem>) {
+  return request<ConsumerItem>(() => http.post(`/spaces/${spaceId}/consumers`, data))
+}
+
+export function updateConsumer(spaceId: number, id: number, data: Partial<ConsumerItem>) {
+  return request<ConsumerItem>(() => http.put(`/spaces/${spaceId}/consumers/${id}`, data))
+}
+
+export function deleteConsumer(spaceId: number, id: number) {
+  return request<null>(() => http.delete(`/spaces/${spaceId}/consumers/${id}`))
+}
+
+export function syncConsumers(spaceId: number) {
+  return request<null>(() => http.post(`/spaces/${spaceId}/consumers/sync`))
+}
+
+export function listPlugins(spaceId: number) {
+  return request<PluginItem[]>(() => http.get(`/spaces/${spaceId}/plugins`))
+}
+
+export function listPluginApis(spaceId: number, pluginId: number) {
+  return request<ApiItem[]>(() => http.get(`/spaces/${spaceId}/plugins/${pluginId}/apis`))
+}
+
+export function createPlugin(spaceId: number, data: Partial<PluginItem>) {
+  return request<PluginItem>(() => http.post(`/spaces/${spaceId}/plugins`, data))
+}
+
+export function updatePlugin(spaceId: number, id: number, data: Partial<PluginItem>) {
+  return request<PluginItem>(() => http.put(`/spaces/${spaceId}/plugins/${id}`, data))
+}
+
+export function deletePlugin(spaceId: number, id: number) {
+  return request<null>(() => http.delete(`/spaces/${spaceId}/plugins/${id}`))
 }
