@@ -253,7 +253,7 @@
       </el-table>
     </el-dialog>
 
-    <el-dialog v-model="detailVisible" :title="detailTitle" width="560px" append-to-body>
+    <el-dialog v-model="detailVisible" :title="detailTitle" width="720px" append-to-body>
       <el-descriptions v-if="detailSnap" :column="1" border>
         <el-descriptions-item label="版本">{{ detailVersion?.version }}</el-descriptions-item>
         <el-descriptions-item label="发布时间">{{ formatTime(detailVersion?.published_at || '') }}</el-descriptions-item>
@@ -283,6 +283,16 @@
         <el-descriptions-item label="后端服务写超时">{{ detailSnap.service_write_timeout ?? '-' }} ms</el-descriptions-item>
         <el-descriptions-item label="后端服务读超时">{{ detailSnap.service_read_timeout ?? '-' }} ms</el-descriptions-item>
       </el-descriptions>
+      <div v-if="detailSnap" class="version-plugins">
+        <div class="version-plugins-title">关联插件</div>
+        <el-table :data="detailPlugins" empty-text="该版本未关联插件" stripe>
+          <el-table-column prop="name" label="插件名字" min-width="140" />
+          <el-table-column prop="plugin" label="插件类型" width="180" />
+          <el-table-column label="插件配置" min-width="260">
+            <template #default="{ row }">{{ formatPluginConfig(row.config) }}</template>
+          </el-table-column>
+        </el-table>
+      </div>
       <el-empty v-else description="无法解析该版本配置" />
     </el-dialog>
   </div>
@@ -473,6 +483,8 @@ interface VersionSnapshot {
   service_write_timeout: number
   service_read_timeout: number
   access_strip_path: boolean
+  plugins: PluginItem[]
+  pluginsRecorded: boolean
 }
 
 const detailSnap = computed(() =>
@@ -481,6 +493,14 @@ const detailSnap = computed(() =>
 const detailTitle = computed(() =>
   detailVersion.value ? `版本 ${detailVersion.value.version} 详情` : '版本详情',
 )
+const detailPlugins = computed(() => {
+  if (!detailSnap.value) return []
+  if (detailSnap.value.pluginsRecorded) return detailSnap.value.plugins
+  if (detailVersion.value?.version === currentApi.value?.current_version) {
+    return currentApi.value?.plugins || []
+  }
+  return []
+})
 
 function parseSnapshot(snap: Record<string, unknown> | string): VersionSnapshot | null {
   try {
@@ -505,9 +525,36 @@ function parseSnapshot(snap: Record<string, unknown> | string): VersionSnapshot 
       service_write_timeout: Number(obj.service_write_timeout ?? obj.write_timeout ?? 0),
       service_read_timeout: Number(obj.service_read_timeout ?? obj.read_timeout ?? 0),
       access_strip_path: readStripPath(obj),
+      plugins: parsePluginSnapshots(obj.plugins),
+      pluginsRecorded: Object.prototype.hasOwnProperty.call(obj, 'plugins'),
     }
   } catch {
     return null
+  }
+}
+
+function parsePluginSnapshots(raw: unknown): PluginItem[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((item, index) => {
+    const row = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>
+    return {
+      id: Number(row.id || index + 1),
+      space_id: Number(row.space_id || 0),
+      name: String(row.name || ''),
+      plugin: String(row.plugin || ''),
+      config: (row.config && typeof row.config === 'object' ? row.config : {}) as Record<string, unknown>,
+      enabled: row.enabled !== false,
+    }
+  })
+}
+
+function formatPluginConfig(config?: Record<string, unknown>) {
+  const entries = Object.entries(config || {}).filter(([, v]) => v !== '' && v !== undefined)
+  if (!entries.length) return '-'
+  try {
+    return JSON.stringify(Object.fromEntries(entries))
+  } catch {
+    return '-'
   }
 }
 
@@ -804,6 +851,13 @@ onMounted(async () => {
   gap: 8px;
   margin-bottom: 8px;
   width: 100%;
+}
+.version-plugins {
+  margin-top: 16px;
+}
+.version-plugins-title {
+  margin-bottom: 8px;
+  font-weight: 600;
 }
 </style>
 

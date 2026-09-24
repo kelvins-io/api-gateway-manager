@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -146,6 +147,7 @@ func (s *APIService) snapshotOf(ctx context.Context, api *model.API) (model.APIC
 		ServiceReadTimeout:    api.ServiceReadTimeout,
 		AccessStripPath:       api.AccessStripPath,
 		KongHost:              api.ServiceHost,
+		Plugins:               pluginSnapshots(api.Plugins),
 	}
 	if api.ServiceUpstreamID != nil {
 		snap.ServiceUpstreamID = *api.ServiceUpstreamID
@@ -164,6 +166,25 @@ func (s *APIService) snapshotOf(ctx context.Context, api *model.API) (model.APIC
 		snap.KongHost = kongHost
 	}
 	return snap, nil
+}
+
+func pluginSnapshots(plugins []model.Plugin) []model.PluginSnapshot {
+	out := make([]model.PluginSnapshot, 0, len(plugins))
+	for _, p := range plugins {
+		item := model.PluginSnapshot{
+			Name:    p.Name,
+			Plugin:  p.Plugin,
+			Enabled: p.Enabled,
+		}
+		if len(p.Config) > 0 {
+			var cfg map[string]interface{}
+			if err := json.Unmarshal(p.Config, &cfg); err == nil {
+				item.Config = cfg
+			}
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func (s *APIService) syncUpstreamGateway(ctx context.Context, upstreamID uint64, gw *model.Gateway) (string, error) {

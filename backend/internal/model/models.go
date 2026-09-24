@@ -171,6 +171,15 @@ type APIConfigSnapshot struct {
 	LegacyReadTimeout     *int                `json:"read_timeout,omitempty"`
 	AccessStripPath       bool                `json:"access_strip_path"`
 	LegacyStripPath       *bool               `json:"strip_path,omitempty"`
+	Plugins               []PluginSnapshot    `json:"plugins"`
+}
+
+// PluginSnapshot is the plugin binding captured when an API version is published.
+type PluginSnapshot struct {
+	Name    string                 `json:"name"`
+	Plugin  string                 `json:"plugin"`
+	Config  map[string]interface{} `json:"config,omitempty"`
+	Enabled bool                   `json:"enabled"`
 }
 
 // EffectiveStripPath prefers the current field and falls back to snapshots stored as strip_path.
