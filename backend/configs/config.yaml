@@ -1,0 +1,19 @@
+server:
+  port: 10000
+  mode: debug
+
+database:
+  host: localhost
+  port: 15444
+  user: agm
+  password: agm123
+  dbname: api_gateway_manager
+  sslmode: disable
+
+jwt:
+  secret: api-gateway-manager-jwt-secret-change-me
+  expire_hours: 72
+
+log:
+  level: info
+  encoding: console
