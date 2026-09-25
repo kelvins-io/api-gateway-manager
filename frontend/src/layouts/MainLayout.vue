@@ -6,9 +6,9 @@
         :key="menuKey"
         :default-active="active"
         router
-        background-color="#1f2d3d"
-        text-color="#c0c4cc"
-        active-text-color="#ffffff"
+        background-color="transparent"
+        text-color="#3b4a63"
+        active-text-color="#3b6dff"
       >
         <el-menu-item index="/spaces">
           <el-icon><OfficeBuilding /></el-icon>
@@ -99,29 +99,30 @@ function onLogout() {
 <style scoped>
 .layout {
   height: 100%;
+  min-height: 100vh;
+  background: transparent;
 }
 .aside {
-  background: #1f2d3d;
-  color: #fff;
+  background: var(--app-sidebar);
+  color: var(--app-sidebar-text);
   display: flex;
   flex-direction: column;
+  border-right: 1px solid #d7e4fb;
 }
 .brand {
   padding: 20px 16px;
   font-weight: 700;
   font-size: 15px;
   line-height: 1.4;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-.aside :deep(.el-menu) {
-  border-right: none;
+  color: #1f2a37;
+  border-bottom: 1px solid #d7e4fb;
 }
 .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: #fff;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid #e2e8f0;
 }
 .header-title {
   font-size: 18px;
@@ -133,9 +134,24 @@ function onLogout() {
   gap: 12px;
 }
 .username {
-  color: #606266;
+  color: #334155;
 }
 .main {
   padding: 20px;
+  background: transparent;
+}
+:deep(.el-container) {
+  background: transparent;
+}
+:deep(.el-menu) {
+  border-right: none;
+  background: transparent;
+}
+:deep(.el-menu-item:hover) {
+  background: rgba(59, 109, 255, 0.08) !important;
+}
+:deep(.el-menu-item.is-active) {
+  background: rgba(59, 109, 255, 0.14) !important;
+  font-weight: 600;
 }
 </style>
