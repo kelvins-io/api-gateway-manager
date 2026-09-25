@@ -61,6 +61,8 @@
           <el-switch v-model="form.enabled" />
         </el-form-item>
         <PluginSchemaForm v-if="useSchemaForm" :plugin="form.plugin" :model="schemaConfig" />
+        <RequestTransformerForm v-else-if="form.plugin === 'request-transformer'" :model="rtConfig" />
+        <ResponseTransformerForm v-else-if="form.plugin === 'response-transformer'" :model="respConfig" />
         <template v-else-if="form.plugin === 'rate-limiting'">
           <el-form-item label="每分钟">
             <el-input-number v-model="form.config.minute" :min="0" />
@@ -196,6 +198,18 @@ import * as apiMod from '@/api/api'
 import { useUserStore } from '@/stores/user'
 import ListPagination from '@/components/ListPagination.vue'
 import PluginSchemaForm from '@/components/PluginSchemaForm.vue'
+import RequestTransformerForm from '@/components/RequestTransformerForm.vue'
+import ResponseTransformerForm from '@/components/ResponseTransformerForm.vue'
+import {
+  buildRequestTransformerPayload,
+  buildResponseTransformerPayload,
+  emptyRequestTransformer,
+  emptyResponseTransformer,
+  fillRequestTransformer,
+  fillResponseTransformer,
+  type RequestTransformerModel,
+  type ResponseTransformerModel,
+} from '@/components/transformer/types'
 import { usePagination } from '@/composables/usePagination'
 import { hasPluginForm, pluginCategories } from '@/constants/kongPlugins'
 import {
@@ -219,6 +233,8 @@ const apiTitle = ref('关联 API')
 const apiRows = ref<ApiItem[]>([])
 const apiLoading = ref(false)
 const schemaConfig = reactive<Record<string, unknown>>({})
+const rtConfig = reactive<RequestTransformerModel>(emptyRequestTransformer())
+const respConfig = reactive<ResponseTransformerModel>(emptyResponseTransformer())
 
 const useSchemaForm = computed(() => !hasPluginForm(form.plugin) && hasSchemaForm(form.plugin))
 
@@ -260,6 +276,27 @@ function resetSchemaConfig(plugin: string, src?: Record<string, unknown>) {
   const next = src ? fillSchemaValues(plugin, src) : defaultSchemaValues(plugin)
   Object.keys(schemaConfig).forEach((k) => delete schemaConfig[k])
   Object.assign(schemaConfig, next)
+}
+
+function resetRtConfig(src?: Record<string, unknown>) {
+  const next = fillRequestTransformer(src)
+  Object.assign(rtConfig, emptyRequestTransformer())
+  rtConfig.http_method = next.http_method
+  rtConfig.remove = next.remove
+  rtConfig.rename = next.rename
+  rtConfig.replace = next.replace
+  rtConfig.add = next.add
+  rtConfig.append = next.append
+}
+
+function resetRespConfig(src?: Record<string, unknown>) {
+  const next = fillResponseTransformer(src)
+  Object.assign(respConfig, emptyResponseTransformer())
+  respConfig.remove = next.remove
+  respConfig.rename = next.rename
+  respConfig.replace = next.replace
+  respConfig.add = next.add
+  respConfig.append = next.append
 }
 
 function asText(value: unknown) {
@@ -315,6 +352,12 @@ function fillConfigJson(row?: PluginItem) {
 }
 
 function payloadConfig(): Record<string, unknown> | null {
+  if (form.plugin === 'request-transformer') {
+    return buildRequestTransformerPayload(rtConfig)
+  }
+  if (form.plugin === 'response-transformer') {
+    return buildResponseTransformerPayload(respConfig)
+  }
   if (hasSchemaForm(form.plugin) && !hasPluginForm(form.plugin)) {
     const result = buildSchemaPayload(form.plugin, schemaConfig)
     if (!result.ok) {
@@ -393,6 +436,8 @@ function onKind() {
   form.config = emptyConfig()
   form.configJson = '{}'
   resetSchemaConfig(form.plugin)
+  resetRtConfig()
+  resetRespConfig()
 }
 
 function openCreate() {
@@ -403,6 +448,8 @@ function openCreate() {
   form.config = emptyConfig()
   form.configJson = '{}'
   resetSchemaConfig(form.plugin)
+  resetRtConfig()
+  resetRespConfig()
   visible.value = true
 }
 
@@ -427,6 +474,8 @@ function openEdit(row: PluginItem) {
   form.config = fillConfig(row)
   form.configJson = fillConfigJson(row)
   resetSchemaConfig(row.plugin, (row.config || {}) as Record<string, unknown>)
+  resetRtConfig((row.config || {}) as Record<string, unknown>)
+  resetRespConfig((row.config || {}) as Record<string, unknown>)
   visible.value = true
 }
 

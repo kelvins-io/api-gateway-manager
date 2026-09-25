@@ -63,6 +63,8 @@ export const formPlugins = new Set([
   'hmac-auth',
   'request-termination',
   'correlation-id',
+  'request-transformer',
+  'response-transformer',
 ])
 
 export function hasPluginForm(plugin: string) {

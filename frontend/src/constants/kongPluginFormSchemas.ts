@@ -251,21 +251,6 @@ export const pluginFormSchemas: Record<string, FormField[]> = {
     { key: 'pass_stripped_path', label: 'pass_stripped_path', type: 'boolean', default: false },
     { key: 'allow_origin_header', label: 'allow_origin_header', type: 'string', default: '*' },
   ],
-  'request-transformer': [
-    { key: 'http_method', label: 'http_method', type: 'select', options: [...HTTP_METHODS] },
-    { key: 'remove', label: 'remove', type: 'json', default: '{"body":[],"headers":[],"querystring":[]}' },
-    { key: 'rename', label: 'rename', type: 'json', default: '{"body":[],"headers":[],"querystring":[]}' },
-    { key: 'replace', label: 'replace', type: 'json', default: '{"body":[],"headers":[],"querystring":[],"uri":null}' },
-    { key: 'add', label: 'add', type: 'json', default: '{"body":[],"headers":[],"querystring":[]}' },
-    { key: 'append', label: 'append', type: 'json', default: '{"body":[],"headers":[],"querystring":[]}' },
-  ],
-  'response-transformer': [
-    { key: 'remove', label: 'remove', type: 'json', default: '{"json":[],"headers":[]}' },
-    { key: 'rename', label: 'rename', type: 'json', default: '{"headers":[]}' },
-    { key: 'replace', label: 'replace', type: 'json', default: '{"json":[],"json_types":[],"headers":[]}' },
-    { key: 'add', label: 'add', type: 'json', default: '{"json":[],"json_types":[],"headers":[]}' },
-    { key: 'append', label: 'append', type: 'json', default: '{"json":[],"json_types":[],"headers":[]}' },
-  ],
   'file-log': [
     { key: 'path', label: 'path', type: 'string', required: true, placeholder: '/tmp/file.log' },
     { key: 'reopen', label: 'reopen', type: 'boolean', default: false },
