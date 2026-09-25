@@ -112,6 +112,7 @@ type API struct {
 	AuthConfig            datatypes.JSON `gorm:"type:jsonb" json:"auth_config"`
 	Status                string         `gorm:"size:32;not null;default:draft" json:"status"`
 	CurrentVersion        string         `gorm:"size:32" json:"current_version"`
+	Shared                bool           `gorm:"not null;default:false;index" json:"shared"`
 	KongServiceID         string         `gorm:"size:64" json:"kong_service_id"`
 	KongRouteID           string         `gorm:"size:64" json:"kong_route_id"`
 	CreatedAt             time.Time      `json:"created_at"`

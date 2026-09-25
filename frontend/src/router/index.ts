@@ -38,6 +38,11 @@ const router = createRouter({
           meta: { systemAdmin: true },
         },
         {
+          path: 'market',
+          name: 'market',
+          component: () => import('@/views/MarketView.vue'),
+        },
+        {
           path: 'groups',
           name: 'groups',
           component: () => import('@/views/GroupsView.vue'),

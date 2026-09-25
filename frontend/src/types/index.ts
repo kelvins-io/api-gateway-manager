@@ -46,7 +46,7 @@ export interface ApiGroup {
   gateway_id: number
   name: string
   gateway?: Gateway
-  space?: { prefix: string }
+  space?: { id?: number; name?: string; prefix: string }
   api_count?: number
 }
 
@@ -150,6 +150,7 @@ export interface ApiItem {
   auth_config?: Record<string, unknown>
   status: string
   current_version: string
+  shared?: boolean
   kong_service_id?: string
   kong_route_id?: string
   group?: ApiGroup

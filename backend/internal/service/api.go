@@ -404,12 +404,52 @@ func (s *APIService) Offline(ctx context.Context, id uint64) (*model.API, error)
 
 	if err := s.db.Model(api).Updates(map[string]interface{}{
 		"status":          model.APIStatusOffline,
+		"shared":          false,
 		"kong_service_id": "",
 		"kong_route_id":   "",
 	}).Error; err != nil {
 		return nil, err
 	}
 	return s.Get(id)
+}
+
+func (s *APIService) Share(id uint64) (*model.API, error) {
+	api, err := s.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if api.Status != model.APIStatusPublished {
+		return nil, fmt.Errorf("%w: 仅已发布的 API 可以分享到市场", ErrBadRequest)
+	}
+	if api.Shared {
+		return api, nil
+	}
+	if err := s.db.Model(api).Update("shared", true).Error; err != nil {
+		return nil, err
+	}
+	return s.Get(id)
+}
+
+func (s *APIService) Unshare(id uint64) (*model.API, error) {
+	api, err := s.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if !api.Shared {
+		return api, nil
+	}
+	if err := s.db.Model(api).Update("shared", false).Error; err != nil {
+		return nil, err
+	}
+	return s.Get(id)
+}
+
+func (s *APIService) ListMarket() ([]model.API, error) {
+	var list []model.API
+	err := s.db.Preload("Group").Preload("Group.Gateway").Preload("Group.Space").
+		Where("shared = ? AND status = ?", true, model.APIStatusPublished).
+		Order("id desc").Find(&list).Error
+	return list, err
 }
 
 func (s *APIService) SwitchVersion(ctx context.Context, id uint64, version string) (*model.API, error) {

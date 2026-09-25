@@ -109,11 +109,15 @@ func Setup(db *gorm.DB, jwtMgr *jwtutil.Manager, log *zap.Logger, h Handlers) *g
 			authed.GET("/groups/:gid/apis", requireGroupAccess(db, h.GroupSvc, false), h.API.List)
 			authed.POST("/groups/:gid/apis", requireGroupAccess(db, h.GroupSvc, true), h.API.Create)
 
+			authed.GET("/market/apis", h.API.ListMarket)
+
 			authed.GET("/apis/:aid", requireAPIAccess(db, h.APISvc, false), h.API.Get)
 			authed.PUT("/apis/:aid", requireAPIAccess(db, h.APISvc, true), h.API.Update)
 			authed.DELETE("/apis/:aid", requireAPIAccess(db, h.APISvc, true), h.API.Delete)
 			authed.POST("/apis/:aid/publish", requireAPIAccess(db, h.APISvc, true), h.API.Publish)
 			authed.POST("/apis/:aid/offline", requireAPIAccess(db, h.APISvc, true), h.API.Offline)
+			authed.POST("/apis/:aid/share", requireAPIAccess(db, h.APISvc, true), h.API.Share)
+			authed.POST("/apis/:aid/unshare", requireAPIAccess(db, h.APISvc, true), h.API.Unshare)
 			authed.POST("/apis/:aid/switch-version", requireAPIAccess(db, h.APISvc, true), h.API.SwitchVersion)
 			authed.GET("/apis/:aid/versions", requireAPIAccess(db, h.APISvc, false), h.API.ListVersions)
 		}

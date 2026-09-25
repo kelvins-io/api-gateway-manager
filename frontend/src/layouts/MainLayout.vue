@@ -14,6 +14,10 @@
           <el-icon><OfficeBuilding /></el-icon>
           <span>空间管理</span>
         </el-menu-item>
+        <el-menu-item index="/market">
+          <el-icon><Shop /></el-icon>
+          <span>API 市场</span>
+        </el-menu-item>
         <el-menu-item v-if="isSystemAdmin" index="/gateways">
           <el-icon><Connection /></el-icon>
           <span>网关管理</span>
@@ -51,12 +55,14 @@ const menuKey = computed(() => `menu-${user.value?.role || 'none'}-${isSystemAdm
 
 const active = computed(() => {
   if (route.path.startsWith('/gateways')) return '/gateways'
+  if (route.path.startsWith('/market')) return '/market'
   if (route.path.startsWith('/spaces') || route.path.startsWith('/groups') || route.path.startsWith('/upstreams') || route.path.startsWith('/consumers') || route.path.startsWith('/plugins')) return '/spaces'
   return route.path
 })
 
 const title = computed(() => {
   if (route.name === 'gateways') return '网关管理'
+  if (route.name === 'market') return 'API 市场'
   if (route.name === 'groups') return 'API 分组'
   if (route.name === 'apis') return 'API 管理'
   if (route.name === 'upstreams') return 'Upstream'

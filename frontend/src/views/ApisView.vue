@@ -47,13 +47,37 @@
         </template>
       </el-table-column>
       <el-table-column prop="current_version" label="当前版本" width="100" />
-      <el-table-column label="操作" width="520" fixed="right">
+      <el-table-column label="分享" width="90">
+        <template #default="{ row }">
+          <el-tag v-if="row.shared" type="success" size="small">已分享</el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="600" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button link type="success" @click="onPublish(row)">发布</el-button>
           <el-tooltip :disabled="canOffline(row)" content="已关联 Consumer 的 API 不允许下线" placement="top">
             <span>
               <el-button link type="warning" @click="onOffline(row)" :disabled="!canOffline(row)">下线</el-button>
+            </span>
+          </el-tooltip>
+          <el-tooltip
+            :disabled="row.status === 'published' || !!row.shared"
+            content="仅已发布的 API 可以分享"
+            placement="top"
+          >
+            <span>
+              <el-button
+                v-if="!row.shared"
+                link
+                type="primary"
+                :disabled="row.status !== 'published'"
+                @click="onShare(row)"
+              >
+                分享
+              </el-button>
+              <el-button v-else link type="warning" @click="onUnshare(row)">取消分享</el-button>
             </span>
           </el-tooltip>
           <el-button link type="primary" @click="openVersions(row)">版本</el-button>
@@ -784,6 +808,22 @@ async function onOffline(row: ApiItem) {
   await ElMessageBox.confirm(`确认下线 API「${row.name}」？`, '下线确认', { type: 'warning' })
   await apiMod.offlineApi(row.id)
   ElMessage.success('已下线')
+  await load()
+}
+
+async function onShare(row: ApiItem) {
+  await ElMessageBox.confirm(`确认将 API「${row.name}」分享到 API 市场？`, '分享确认')
+  await apiMod.shareApi(row.id)
+  ElMessage.success('已分享到 API 市场')
+  await load()
+}
+
+async function onUnshare(row: ApiItem) {
+  await ElMessageBox.confirm(`确认取消分享 API「${row.name}」？取消后将从 API 市场移除。`, '取消分享', {
+    type: 'warning',
+  })
+  await apiMod.unshareApi(row.id)
+  ElMessage.success('已取消分享')
   await load()
 }
 

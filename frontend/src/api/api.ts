@@ -45,6 +45,18 @@ export function offlineApi(aid: number) {
   return request<ApiItem>(() => http.post(`/apis/${aid}/offline`))
 }
 
+export function shareApi(aid: number) {
+  return request<ApiItem>(() => http.post(`/apis/${aid}/share`))
+}
+
+export function unshareApi(aid: number) {
+  return request<ApiItem>(() => http.post(`/apis/${aid}/unshare`))
+}
+
+export function listMarketApis() {
+  return request<ApiItem[]>(() => http.get('/market/apis'))
+}
+
 export function switchVersion(aid: number, version: string) {
   return request<ApiItem>(() => http.post(`/apis/${aid}/switch-version`, { version }))
 }

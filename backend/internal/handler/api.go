@@ -157,3 +157,38 @@ func (h *APIHandler) ListVersions(c *gin.Context) {
 	}
 	response.OK(c, list)
 }
+
+func (h *APIHandler) Share(c *gin.Context) {
+	id, ok := parseID(c, "aid")
+	if !ok {
+		return
+	}
+	api, err := h.svc.Share(id)
+	if err != nil {
+		mapError(c, err)
+		return
+	}
+	response.OK(c, api)
+}
+
+func (h *APIHandler) Unshare(c *gin.Context) {
+	id, ok := parseID(c, "aid")
+	if !ok {
+		return
+	}
+	api, err := h.svc.Unshare(id)
+	if err != nil {
+		mapError(c, err)
+		return
+	}
+	response.OK(c, api)
+}
+
+func (h *APIHandler) ListMarket(c *gin.Context) {
+	list, err := h.svc.ListMarket()
+	if err != nil {
+		mapError(c, err)
+		return
+	}
+	response.OK(c, list)
+}
