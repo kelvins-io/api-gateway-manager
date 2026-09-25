@@ -1,6 +1,8 @@
 # API Gateway Manager
 
-基于 Kong 的 API 网关管理系统：空间、用户、网关、API 分组、Upstream、Consumer、Plugin，以及 API 发布与版本切换。
+基于 Kong 的 API 网关管理系统：空间与成员审批、网关、API 分组、Upstream、Consumer、Plugin、API 发布与版本切换，以及 API 市场分享。
+
+[English](README_EN.md)
 
 ## 技术栈
 
@@ -9,7 +11,7 @@
 | 前端 | Vue 3 + Vite + TypeScript + Element Plus + Pinia + Vue Router |
 | 后端 | Go + Gin + Zap + GORM + JWT |
 | 数据 | PostgreSQL |
-| 网关 | Kong（通过 go-kong 管理 Admin API） |
+| 网关 | Kong（通过 go-kong 管理 Admin API，插件目录对齐 Kong Gateway 3.4.2 OSS） |
 
 ## 快速启动
 
@@ -27,6 +29,7 @@ make docker-up
 |------|------|
 | 前端 | http://localhost:5373 |
 | 后端 API | http://localhost:10000 |
+| 健康检查 | http://localhost:10000/health |
 | PostgreSQL | localhost:15444 |
 
 若本机 `10000` 已被占用，可改映射：`AGM_BACKEND_PORT=11000 docker compose up -d --build`。
@@ -64,6 +67,8 @@ make deps
 ```bash
 cd backend
 go run ./cmd/server -config configs/config.yaml
+# 或
+make backend
 ```
 
 默认监听 `http://localhost:10000`。
@@ -74,6 +79,8 @@ go run ./cmd/server -config configs/config.yaml
 cd frontend
 npm install
 npm run dev
+# 或
+make frontend
 ```
 
 浏览器打开 `http://localhost:5373`。开发服务器把 `/api` 代理到 `http://localhost:10000`。
@@ -81,11 +88,12 @@ npm run dev
 ## 默认约定
 
 - **首个注册用户**自动成为 `system_admin`（系统管理员）
-- 后续注册用户角色为 `member`，可申请空间或加入已有空间
-- **申请空间即创建**，申请人成为该空间 `space_admin`
-- 空间创建成功后，**所有系统管理员**自动加入该空间（空间角色为 `space_admin`）
+- 后续注册用户角色为 `member`
+- **申请空间**：普通用户创建后状态为 `pending`，需系统管理员审批通过后变为 `active`；系统管理员创建的空间直接 `active`
+- 申请人成为该空间 `space_admin`；空间激活后，**所有系统管理员**自动加入该空间（空间角色为 `space_admin`）
+- **加入空间**：普通用户申请后为 `pending`，需空间管理员确认；系统管理员加入时直接生效且为 `space_admin`
 - 角色层级：`system_admin` > `space_admin` > `member`
-- 空间、API 分组、API、Upstream、Consumer、Plugin 列表默认每页 10 条，可切换为 20、50、100 条
+- 空间、API 分组、API、Upstream、Consumer、Plugin、API 市场列表默认每页 10 条，可切换为 20、50、100 条
 
 ## 功能说明
 
@@ -93,14 +101,17 @@ npm run dev
 
 - 申请 / 更新 / 删除空间；空间下仍有分组时不能删除
 - 创建时指定路径前缀（如 `/order`），创建后不可修改；发布 API 时会拼到接入路径前面
-- 加入空间（用户可属于多个空间）
-- 成员列表与空间内角色调整（`space_admin` / `member`）
+- 系统管理员可审批或拒绝待审批空间（拒绝即删除申请）
+- 加入空间（用户可属于多个空间）；空间管理员可审批 / 拒绝加入申请
+- 空间管理员可从候选用户中直接添加成员，并调整空间内角色（`space_admin` / `member`）
+- 空间所有者不可被移除
 
 ### 网关管理（仅系统管理员）
 
 - 字段：网关名、Admin API、Domain（`IP:端口` 或 `域名:端口`）、网络区域
 - 创建时探测 Admin API 是否可达；Admin API 创建后不可修改
 - 分组绑定时只暴露网关名和网络区域，不暴露 Admin API
+- API 列表与 API 市场会结合 Domain + 空间前缀展示完整访问地址
 
 ### API 分组
 
@@ -131,10 +142,10 @@ npm run dev
   - 分析与监控 / Analytics & Monitoring：datadog、opentelemetry、prometheus、statsd、zipkin
   - 转换 / Transformations：correlation-id、grpc-gateway、grpc-web、request-transformer、response-transformer
   - 日志 / Logging：file-log、http-log、loggly、syslog、tcp-log、udp-log
-- 常用插件提供表单；其余插件按 Kong 3.4.2 schema 提供配置表单（嵌套结构用 JSON 字段），发布时由 Kong 校验
+- 常用插件提供表单；枚举类配置使用下拉选择；`request-transformer` / `response-transformer` 提供可视化编辑器；其余插件按 Kong 3.4.2 schema 提供配置表单（嵌套结构用 JSON 字段），发布时由 Kong 校验
 - API 可关联多个 Plugin；发布或更新关联后，同步到该 API 对应的 Kong Service
 - 修改或删除 Plugin 时，会更新仍在发布状态的关联 API
-- 可查看某个 Plugin 当前关联的 API
+- 可查看某个 Plugin 当前关联的 API；版本详情中可查看该版本绑定的 Plugin 快照
 
 ### API 管理
 
@@ -142,9 +153,16 @@ npm run dev
 - 后端服务：协议、直接地址或 Upstream、端口、路径、重试和超时
 - 认证：可启用 key-auth、basic-auth、jwt、hmac-auth、acl，并绑定空间内 Plugin 与 Consumer
 - **发布**：通过 go-kong 创建/更新 Kong Service + Route，并生成版本（`v1`、`v2`…）
-- **下线**：删除 Kong 上对应 Service/Route；已关联 Consumer 的 API 不允许下线
+- **下线**：删除 Kong 上对应 Service/Route；已关联 Consumer 的 API 不允许下线；下线时自动取消市场分享
 - **删除**：已发布或已关联 Consumer 的 API 不允许删除
 - **版本切换**：下线当前配置，按所选版本快照重新发布
+- **分享 / 取消分享**：仅已发布的 API 可分享到 API 市场
+
+### API 市场
+
+- 展示所有已分享的已发布 API
+- 可见所属空间、接入协议、完整访问地址、请求方法、认证类型与当前版本
+- 登录用户均可浏览；分享与取消分享由对应空间管理员在 API 管理中操作
 
 ## 配置
 
@@ -153,7 +171,7 @@ npm run dev
 - 服务端口默认 `10000`
 - 数据库默认：`agm / agm123 @ localhost:15444 / api_gateway_manager`
 - JWT secret 与过期时间可按需修改
-- 环境变量前缀 `AGM_`（如 `AGM_SERVER_PORT=10000`）
+- 环境变量前缀 `AGM_`（如 `AGM_SERVER_PORT=10000`、`AGM_JWT_SECRET=...`）
 
 ## 本地验证账号
 
@@ -173,7 +191,9 @@ npm run dev
 │   ├── Dockerfile
 │   └── nginx.conf     # 静态资源 + /api 反代
 ├── docker-compose.yml # postgres + backend + frontend（Kong 已注释）
-└── Makefile
+├── Makefile
+├── README.md          # 中文说明
+└── README_EN.md       # English
 ```
 
 ## API 前缀
