@@ -1,0 +1,282 @@
+---
+description: Frontend UI/UX design rules (Design Foundation free set) — hierarchy, 8px grid, anti-patterns, and design judgment when creating or reviewing UI
+globs: frontend/**/*.{vue,css,ts}
+alwaysApply: false
+---
+
+# Design Foundation — Free Design Rules
+
+Source: https://github.com/studioalexwolf/cursor-design-rules (3 of 36 free rules).
+
+## Project adaptation
+
+- Prefer existing Element Plus patterns and tokens in `frontend/src/styles.css` over inventing a new visual system.
+- Keep the established light theme / blue accent (`--app-accent`, `--app-sidebar-*`).
+- Chinese admin copy may use concise verbs (保存 / 删除 / 发布); prefer verb + object when space allows.
+- When editing existing views, preserve established layout and component patterns.
+
+# ============================================================
+# RULE 00 — CORE DESIGN PRINCIPLES
+# ============================================================
+
+# Before creating ANY screen, answer these questions:
+# 1. What is the SINGLE primary action?
+# 2. What is the visual hierarchy? (1st, 2nd, 3rd element)
+# 3. Does spacing follow the 8px grid?
+# 4. Are touch targets at least 44x44px?
+# 5. Is text contrast 4.5:1 or higher?
+
+## THE 7 PILLARS OF VISUAL DESIGN
+
+### 1. Hierarchy
+- Size: The most important element is the largest
+- Weight: Bold for headings, regular for body
+- Color: Vibrant colors for actions, neutrals for support
+- Position: F-pattern (web) or centered (mobile)
+- Spacing: More space around = more importance
+
+### 2. Contrast
+- Text over background: minimum 4.5:1 ratio (WCAG AA)
+- Large text (>18px bold or >24px): minimum 3:1
+- NEVER light gray on white
+- Dark mode: Use #E0E0E0 on #121212 (not pure white on pure black)
+
+### 3. Alignment
+- Use an 8px grid for EVERYTHING (spacing, padding, margin, sizes)
+- Left-align by default (LTR languages)
+- Center only for screen titles, modals, and empty states
+- NEVER mix different alignments in the same section
+
+### 4. Proximity
+- Related elements: 8-12px apart
+- Unrelated elements: 24-32px+ apart
+- Space between groups >= 2x space within a group
+- Label to Input: 4-8px | Section to Section: 32-48px
+
+### 5. Repetition
+- Same pattern = same meaning everywhere
+- Reuse components before creating new ones
+- Consistency builds trust
+
+### 6. Whitespace
+- 60-70% content, 30-40% visible background
+- Micro whitespace (4-8px): relationships within groups
+- Macro whitespace (32-64px): separation between sections
+- More whitespace = higher perceived quality
+
+### 7. Unity
+- Same border-radius, shadow, color palette, type scale, spacing scale
+- Squint test: if elements "pop" disconnectedly, unity is broken
+
+## GOLDEN RULES
+- Touch targets: 44x44px minimum (Apple HIG), 48x48dp (Material)
+- Body text: 16px minimum
+- Caption text: 12px minimum
+- Screen title: 20-28px
+- Circular buttons: width === height, cornerRadius = width/2
+
+## TRADE-OFF PRIORITY CHAIN
+# When goals conflict, resolve in this order (highest first):
+# Accessibility > Safety > Readability > Consistency > Information Density > Aesthetics
+
+## ERRORS ARE NEVER THE USER'S FAULT
+- NEVER: "You entered an invalid email"
+- ALWAYS: "This email format doesn't look right. Try name@example.com"
+
+## THE USER MUST ALWAYS KNOW:
+1. Where they are (title, breadcrumbs, active tab)
+2. What they can do (visible buttons, clear affordances)
+3. What will happen (descriptive labels: "Send Payment" not "Confirm")
+4. How to go back (back button, gesture, X to close)
+
+
+# ============================================================
+# RULE 16 — ANTI-PATTERNS: 27 THINGS TO NEVER DO
+# ============================================================
+
+## CRITICAL ANTI-PATTERNS (stop and fix immediately)
+
+### AP-01: Oval/Cylindrical Buttons (CATASTROPHIC)
+Circular buttons MUST be FIXED width = FIXED height with cornerRadius = size/2.
+Never use HUG or AUTO sizing on circular buttons.
+
+### AP-02: Color Soup
+Use exactly 1 accent color for all primary actions.
+Vary hierarchy by STYLE (filled/outlined/ghost), not by COLOR.
+- Primary: Filled accent color
+- Secondary: Outlined (accent border, transparent bg)
+- Tertiary: Ghost (no border, accent text only)
+
+### AP-03: Inconsistent Padding
+Choose 1 padding value for all cards of the same type. Follow the 8px grid.
+WRONG: Card 1 = 24px, Card 2 = 16px, Card 3 = 12px top / 20px bottom
+
+### AP-04: Mixed Border-Radius
+Maximum 2 border-radius values + pill across the entire design.
+WRONG: Cards 16px, Buttons 8px, Inputs 4px, Badges 12px
+
+### AP-05: Illegible Text
+- Body text minimum 16px
+- Font-weight 400+ for anything below 18px
+- Contrast ratio 4.5:1+ for normal text
+- Never use font-weight 300 (Light) at sizes below 18px
+
+### AP-06: Two Primary CTAs
+Only 1 filled (primary) button per screen.
+All other actions must be outlined or ghost style.
+
+### AP-07: CTA at Top of Screen (Mobile)
+Primary CTA always in the bottom half (thumb zone).
+NEVER place the main action at the top of the screen on mobile.
+
+### AP-08: Generic Button Labels
+Button labels must be verb + noun: "Send Payment", "Delete Account", "Save Draft"
+NEVER: "OK", "Yes", "Submit", "Confirm", "Continue"
+
+### AP-09: No Loading Feedback
+Visual feedback within 100ms of any action.
+Show loading state if action takes > 400ms.
+NEVER leave the screen frozen after a tap.
+
+### AP-10: Modal Without Exit
+Modals must have at least 2 ways to close:
+- X button + overlay tap, OR
+- X button + swipe down (bottom sheets)
+
+### AP-11: Floating Elements
+Everything must be inside organized frames with auto-layout.
+No loose components floating on the canvas.
+
+### AP-13: No Elevation in Dark Mode
+Dark mode needs elevation layers:
+- Background: #121212
+- Card/Surface: #1E1E1E (lighter than bg)
+- Elevated: #252525
+- Accent button: brand color
+
+### AP-14: Icons Without Labels
+All navigation icons must have text labels.
+Icon-only navigation is not self-explanatory for new users.
+
+### AP-15: Excessive Animation
+- 300ms transitions, gentle easing
+- No bounce effects in financial/professional apps
+- Micro-interactions only where functionally needed
+
+### AP-16: No Information Hierarchy
+Every screen needs at least 3 different text sizes to create clear hierarchy:
+- Title: 24px SemiBold
+- Subtitle: 18px SemiBold
+- Body: 16px Regular
+- Caption: 12px Regular, gray
+
+### AP-17: Cards With Too Much Information
+Maximum 3-4 lines of text per card. Show summary, link to detail.
+
+## DARK PATTERN VIOLATIONS (ethically unacceptable)
+
+### AP-18: Confirm-Shaming
+NEVER use manipulative dismiss text like "No thanks, I hate saving money"
+ALWAYS use neutral dismiss: "No thanks"
+
+### AP-19: Roach Motel
+Account deletion must be max 2 levels deep, not buried in 5 levels.
+
+### AP-20: Hidden Costs
+Show full itemized pricing from the start, not only at checkout.
+
+### AP-21: Forced Continuity
+Warn before trial ends. Offer clear cancellation option.
+
+### AP-22: Trick Questions
+Clear, opt-in language. No double negatives.
+
+### AP-23: Feature Overload on First Use
+New users see simplified dashboard with guided onboarding, not everything at once.
+
+### AP-24: Settings Graveyard
+Organize settings by category with search. Surface common settings first.
+
+### AP-25: Notification Spam
+Categorize notifications. Let users control preferences per category.
+
+### AP-26: Choice Overload
+Maximum 3-4 options for primary decisions.
+If more needed, provide a recommendation ("Most popular").
+
+### AP-27: Decision Hijacking
+Smart defaults and honest social proof = OK.
+Fake scarcity, pre-checked upsells, commitment traps = NOT OK.
+
+## SELF-REVIEW CHECKLIST
+- [ ] Only 1 primary CTA (filled)?
+- [ ] Circular buttons actually circular?
+- [ ] Only 1 accent color on screen?
+- [ ] Consistent border-radius on same-type elements?
+- [ ] Uniform padding on cards/containers?
+- [ ] Clear typographic hierarchy (3+ sizes)?
+- [ ] CTA in thumb zone (bottom half)?
+- [ ] Button labels are verb + noun?
+- [ ] Loading states for actions > 400ms?
+- [ ] Modals have 2+ ways to close?
+
+
+# ============================================================
+# RULE 20 — DESIGN JUDGMENT: SPIRIT OVER LETTER
+# ============================================================
+
+# THE CARDINAL RULE:
+# Rules exist to GUIDE judgment, not REPLACE it.
+# If following a rule makes the screen uglier, the rule is being applied wrong.
+
+## LESSON 1: COLOR RESTRAINT
+- Semantic colors (red/green) are for SYSTEM STATES only (errors, success)
+- NOT for content decoration (merchant icons, financial labels)
+- Count non-neutral colors on screen. If > 2, you have too many.
+- Premium apps use essentially 1 accent color + grays.
+
+## LESSON 2: DON'T FIX WHAT ISN'T BROKEN
+- If a proven approach already looks good, don't change it because a rule seems to say otherwise
+- The APPEARANCE is the judge, not the specification
+- Icon quality hierarchy: icon library > clean text in containers > hand-drawn vectors
+
+## LESSON 3: HEADER ICONS NEED CONTAINERS
+- Every interactive icon in headers/toolbars needs a tappable container (circle/rounded rect)
+- All header icon buttons: same size and style (40-44px circular, subtle fill)
+- Naked floating icons look broken
+
+## LESSON 4: WHITESPACE IS THE DESIGN
+- Measure overall composition, not individual gaps
+- If content fills > 80% of viewport, it's too dense
+- Aim for 60-70% content, 30-40% visible background
+- Zoom to 50%, squint: can you see background between sections?
+
+## LESSON 5: CENTER HERO ELEMENTS
+- If an element is THE HERO (largest, most important), center it
+- Centering creates visual gravity: "this is THE thing"
+- Supporting info goes below, also centered
+
+## LESSON 6: LIST ITEMS MUST MATCH
+- All elements in a list serving the same function must look identical except content
+- WRONG: Brand-colored merchant icons (red Netflix, green Spotify)
+- RIGHT: All neutral, consistent — the eye focuses on names and amounts
+
+## WHEN RULES CONFLICT
+1. Build the screen following the rules
+2. Take a screenshot
+3. Ask: "Does this LOOK good? Does it feel premium?"
+4. If NO — identify which rule application is wrong
+5. Adjust the interpretation, keep the SPIRIT
+6. Screenshot again. The better-looking version wins.
+
+## WHEN TO BREAK RULES
+1. Can you name which rule you're breaking? If no -> follow the rules
+2. Can you explain why it doesn't serve the user here? If no -> follow it
+3. Is it reversible? If yes -> try it, evaluate
+4. Would 7/10 designers agree your version is better? If yes -> break it
+
+## DESIGN MATURITY LEVELS
+# 1. Functional (does it work?) -> 2. Consistent (same patterns?) ->
+# 3. Polished (every detail intentional?) -> 4. Delightful (surprise?) ->
+# 5. Adaptive (learns from user?)
+# NEVER work on a higher level before lower levels are solid.
