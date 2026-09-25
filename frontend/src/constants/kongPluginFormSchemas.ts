@@ -1,6 +1,11 @@
 /** Kong Gateway 3.4.2 plugin config form fields for plugins without hand-written templates. */
 
-export type FormFieldType = 'string' | 'number' | 'boolean' | 'select' | 'csv' | 'textarea' | 'json'
+export type FormFieldType = 'string' | 'number' | 'boolean' | 'select' | 'multiselect' | 'csv' | 'textarea' | 'json'
+
+export const HTTP_METHODS = ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS', 'TRACE', 'CONNECT'] as const
+export const PROXY_CACHE_METHODS = ['HEAD', 'GET', 'POST', 'PATCH', 'PUT'] as const
+export const SESSION_LOGOUT_METHODS = ['GET', 'POST', 'DELETE'] as const
+export const JWT_CLAIMS = ['exp', 'nbf'] as const
 
 export interface FormField {
   key: string
@@ -65,12 +70,21 @@ export const pluginFormSchemas: Record<string, FormField[]> = {
     { key: 'cookie_secure', label: 'cookie_secure', type: 'boolean', default: true },
     { key: 'remember', label: 'remember', type: 'boolean', default: false },
     { key: 'remember_cookie_name', label: 'remember_cookie_name', type: 'string', default: 'remember' },
-    { key: 'logout_methods', label: 'logout_methods', type: 'csv', default: 'POST,DELETE', placeholder: 'POST,DELETE' },
+    { key: 'logout_methods', label: 'logout_methods', type: 'multiselect', default: ['POST', 'DELETE'], options: [...SESSION_LOGOUT_METHODS] },
     { key: 'logout_query_arg', label: 'logout_query_arg', type: 'string', default: 'session_logout' },
   ],
   acme: [
     { key: 'account_email', label: 'account_email', type: 'string', required: true, placeholder: 'admin@example.com' },
-    { key: 'api_uri', label: 'api_uri', type: 'string', default: 'https://acme-v02.api.letsencrypt.org/directory' },
+    {
+      key: 'api_uri',
+      label: 'api_uri',
+      type: 'select',
+      default: 'https://acme-v02.api.letsencrypt.org/directory',
+      options: [
+        'https://acme-v02.api.letsencrypt.org/directory',
+        'https://acme-staging-v02.api.letsencrypt.org/directory',
+      ],
+    },
     { key: 'tos_accepted', label: 'tos_accepted', type: 'boolean', default: false },
     { key: 'cert_type', label: 'cert_type', type: 'select', default: 'rsa', options: ['rsa', 'ecc'] },
     { key: 'rsa_key_size', label: 'rsa_key_size', type: 'select', default: 4096, options: [2048, 3072, 4096] },
@@ -87,7 +101,7 @@ export const pluginFormSchemas: Record<string, FormField[]> = {
   ],
   'proxy-cache': [
     { key: 'response_code', label: 'response_code', type: 'csv', default: '200,301,404', required: true },
-    { key: 'request_method', label: 'request_method', type: 'csv', default: 'GET,HEAD', required: true },
+    { key: 'request_method', label: 'request_method', type: 'multiselect', default: ['GET', 'HEAD'], required: true, options: [...PROXY_CACHE_METHODS] },
     { key: 'content_type', label: 'content_type', type: 'csv', default: 'text/plain,application/json', required: true },
     { key: 'cache_ttl', label: 'cache_ttl', type: 'number', default: 300, min: 1 },
     { key: 'strategy', label: 'strategy', type: 'select', required: true, default: 'memory', options: ['memory'] },
@@ -238,7 +252,7 @@ export const pluginFormSchemas: Record<string, FormField[]> = {
     { key: 'allow_origin_header', label: 'allow_origin_header', type: 'string', default: '*' },
   ],
   'request-transformer': [
-    { key: 'http_method', label: 'http_method', type: 'string', placeholder: 'GET' },
+    { key: 'http_method', label: 'http_method', type: 'select', options: [...HTTP_METHODS] },
     { key: 'remove', label: 'remove', type: 'json', default: '{"body":[],"headers":[],"querystring":[]}' },
     { key: 'rename', label: 'rename', type: 'json', default: '{"body":[],"headers":[],"querystring":[]}' },
     { key: 'replace', label: 'replace', type: 'json', default: '{"body":[],"headers":[],"querystring":[],"uri":null}' },
@@ -310,11 +324,13 @@ export function defaultSchemaValues(plugin: string): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const f of fields) {
     if (f.default !== undefined) {
-      out[f.key] = f.type === 'json' ? String(f.default) : f.default
+      out[f.key] = f.type === 'json' ? String(f.default) : Array.isArray(f.default) ? [...(f.default as unknown[])] : f.default
     } else if (f.type === 'boolean') {
       out[f.key] = false
     } else if (f.type === 'number') {
       out[f.key] = undefined
+    } else if (f.type === 'multiselect') {
+      out[f.key] = []
     } else {
       out[f.key] = ''
     }
@@ -330,6 +346,10 @@ export function fillSchemaValues(plugin: string, src: Record<string, unknown>): 
     if (raw === undefined || raw === null) continue
     if (f.type === 'csv') {
       base[f.key] = Array.isArray(raw) ? raw.join(',') : String(raw)
+    } else if (f.type === 'multiselect') {
+      if (Array.isArray(raw)) base[f.key] = [...raw]
+      else if (typeof raw === 'string' && raw.trim()) base[f.key] = raw.split(',').map((s) => s.trim()).filter(Boolean)
+      else base[f.key] = []
     } else if (f.type === 'json') {
       base[f.key] = typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2)
     } else if (f.type === 'textarea' && PHASE_PLUGINS.has(plugin)) {
@@ -387,6 +407,13 @@ export function buildSchemaPayload(
       } else {
         setPath(out, f.key, val)
       }
+    } else if (f.type === 'multiselect') {
+      const arr = Array.isArray(val) ? val.map(String).filter(Boolean) : []
+      if (!arr.length) {
+        if (f.required) return { ok: false, error: `请选择 ${f.label}` }
+        continue
+      }
+      setPath(out, f.key, arr)
     } else if (f.type === 'csv') {
       const text = val == null ? '' : String(val).trim()
       if (!text) {

@@ -15,7 +15,21 @@
         :model-value="(model[f.key] as string | number | undefined)"
         style="width: 100%"
         clearable
+        filterable
         @update:model-value="(v: string | number | undefined) => setField(f.key, v)"
+      >
+        <el-option v-for="opt in f.options || []" :key="String(opt)" :label="String(opt)" :value="opt" />
+      </el-select>
+      <el-select
+        v-else-if="f.type === 'multiselect'"
+        :model-value="arrayValue(model[f.key])"
+        style="width: 100%"
+        multiple
+        collapse-tags
+        collapse-tags-tooltip
+        clearable
+        filterable
+        @update:model-value="(v: Array<string | number>) => setField(f.key, v)"
       >
         <el-option v-for="opt in f.options || []" :key="String(opt)" :label="String(opt)" :value="opt" />
       </el-select>
@@ -53,6 +67,10 @@ function numValue(v: unknown) {
   if (v === '' || v === undefined || v === null) return undefined
   const n = Number(v)
   return Number.isNaN(n) ? undefined : n
+}
+
+function arrayValue(v: unknown): Array<string | number> {
+  return Array.isArray(v) ? (v as Array<string | number>) : []
 }
 
 function setField(key: string, value: unknown) {

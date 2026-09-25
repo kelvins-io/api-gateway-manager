@@ -76,13 +76,20 @@
               <el-option v-for="v in ['consumer', 'credential', 'ip', 'service', 'header', 'path']" :key="v" :label="v" :value="v" />
             </el-select>
           </el-form-item>
+          <el-form-item label="策略">
+            <el-select v-model="form.config.policy" style="width: 100%">
+              <el-option v-for="v in ['local', 'cluster', 'redis']" :key="v" :label="v" :value="v" />
+            </el-select>
+          </el-form-item>
         </template>
         <template v-else-if="form.plugin === 'cors'">
           <el-form-item label="Origins">
             <el-input v-model="form.config.origins" placeholder="多个用逗号分隔，默认 *" />
           </el-form-item>
           <el-form-item label="Methods">
-            <el-input v-model="form.config.methods" placeholder="留空使用默认方法" />
+            <el-select v-model="form.config.methods" multiple collapse-tags collapse-tags-tooltip filterable style="width: 100%" placeholder="留空使用全部方法">
+              <el-option v-for="v in HTTP_METHODS" :key="v" :label="v" :value="v" />
+            </el-select>
           </el-form-item>
           <el-form-item label="允许凭证">
             <el-switch v-model="form.config.credentials" />
@@ -129,7 +136,9 @@
             <el-input v-model="form.config.header_names" placeholder="默认 authorization" />
           </el-form-item>
           <el-form-item label="校验声明">
-            <el-input v-model="form.config.claims_to_verify" placeholder="如 exp,nbf" />
+            <el-select v-model="form.config.claims_to_verify" multiple collapse-tags style="width: 100%" placeholder="可选 exp / nbf">
+              <el-option v-for="v in JWT_CLAIMS" :key="v" :label="v" :value="v" />
+            </el-select>
           </el-form-item>
         </template>
         <template v-else-if="form.plugin === 'basic-auth' || form.plugin === 'hmac-auth'">
@@ -194,6 +203,8 @@ import {
   defaultSchemaValues,
   fillSchemaValues,
   hasSchemaForm,
+  HTTP_METHODS,
+  JWT_CLAIMS,
 } from '@/constants/kongPluginFormSchemas'
 
 const store = useUserStore()
@@ -217,8 +228,9 @@ function emptyConfig() {
     hour: 0,
     day: 0,
     limit_by: 'consumer',
+    policy: 'local',
     origins: '*',
-    methods: '',
+    methods: [] as string[],
     credentials: false,
     key_names: 'apikey',
     hide_credentials: false,
@@ -228,7 +240,7 @@ function emptyConfig() {
     allowed_payload_size: 1,
     size_unit: 'megabytes',
     header_names: 'authorization',
-    claims_to_verify: '',
+    claims_to_verify: [] as string[],
     status_code: 503,
     message: '',
     header_name: 'Kong-Request-ID',
@@ -256,6 +268,15 @@ function asText(value: unknown) {
   return String(value)
 }
 
+function asList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean)
+  if (value == null || value === '') return []
+  return String(value)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 function fillConfig(row?: PluginItem) {
   const cfg = emptyConfig()
   const src = (row?.config || {}) as Record<string, unknown>
@@ -263,8 +284,9 @@ function fillConfig(row?: PluginItem) {
   cfg.hour = Number(src.hour || 0)
   cfg.day = Number(src.day || 0)
   cfg.limit_by = asText(src.limit_by) || 'consumer'
+  cfg.policy = asText(src.policy) || 'local'
   cfg.origins = asText(src.origins) || '*'
-  cfg.methods = asText(src.methods)
+  cfg.methods = asList(src.methods)
   cfg.credentials = Boolean(src.credentials)
   cfg.key_names = asText(src.key_names) || 'apikey'
   cfg.hide_credentials = Boolean(src.hide_credentials)
@@ -274,7 +296,7 @@ function fillConfig(row?: PluginItem) {
   cfg.allowed_payload_size = Number(src.allowed_payload_size || 1)
   cfg.size_unit = asText(src.size_unit) || 'megabytes'
   cfg.header_names = asText(src.header_names) || 'authorization'
-  cfg.claims_to_verify = asText(src.claims_to_verify)
+  cfg.claims_to_verify = asList(src.claims_to_verify)
   cfg.status_code = Number(src.status_code || 503)
   cfg.message = asText(src.message)
   cfg.header_name = asText(src.header_name) || 'Kong-Request-ID'
@@ -316,7 +338,7 @@ function payloadConfig(): Record<string, unknown> | null {
   }
   const c = form.config
   if (form.plugin === 'rate-limiting') {
-    return { minute: c.minute, hour: c.hour, day: c.day, limit_by: c.limit_by }
+    return { minute: c.minute, hour: c.hour, day: c.day, limit_by: c.limit_by, policy: c.policy }
   }
   if (form.plugin === 'cors') {
     return { origins: c.origins, methods: c.methods, credentials: c.credentials }
