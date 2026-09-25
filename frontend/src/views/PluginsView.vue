@@ -45,20 +45,23 @@
       </el-table>
     </el-dialog>
 
-    <el-dialog v-model="visible" :title="editing ? '编辑 Plugin' : '新建 Plugin'" width="640px">
-      <el-form :model="form" label-width="140px">
+    <el-dialog v-model="visible" :title="editing ? '编辑 Plugin' : '新建 Plugin'" width="720px">
+      <el-form :model="form" label-width="180px">
         <el-form-item label="名称">
           <el-input v-model="form.name" placeholder="字母、数字、点、下划线或中划线" />
         </el-form-item>
         <el-form-item label="类型">
-          <el-select v-model="form.plugin" style="width: 100%" :disabled="!!editing" @change="onKind">
-            <el-option v-for="p in pluginTypes" :key="p" :label="p" :value="p" />
+          <el-select v-model="form.plugin" style="width: 100%" :disabled="!!editing" filterable @change="onKind">
+            <el-option-group v-for="cat in pluginCategories" :key="cat.label" :label="cat.label">
+              <el-option v-for="p in cat.plugins" :key="p" :label="p" :value="p" />
+            </el-option-group>
           </el-select>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" />
         </el-form-item>
-        <template v-if="form.plugin === 'rate-limiting'">
+        <PluginSchemaForm v-if="useSchemaForm" :plugin="form.plugin" :model="schemaConfig" />
+        <template v-else-if="form.plugin === 'rate-limiting'">
           <el-form-item label="每分钟">
             <el-input-number v-model="form.config.minute" :min="0" />
           </el-form-item>
@@ -129,9 +132,12 @@
             <el-input v-model="form.config.claims_to_verify" placeholder="如 exp,nbf" />
           </el-form-item>
         </template>
-        <template v-else-if="form.plugin === 'basic-auth'">
+        <template v-else-if="form.plugin === 'basic-auth' || form.plugin === 'hmac-auth'">
           <el-form-item label="隐藏凭证">
             <el-switch v-model="form.config.hide_credentials" />
+          </el-form-item>
+          <el-form-item v-if="form.plugin === 'hmac-auth'" label="时钟偏移(秒)">
+            <el-input-number v-model="form.config.clock_skew" :min="0" />
           </el-form-item>
         </template>
         <template v-else-if="form.plugin === 'request-termination'">
@@ -154,6 +160,16 @@
             </el-select>
           </el-form-item>
         </template>
+        <template v-else>
+          <el-form-item label="Config JSON">
+            <el-input
+              v-model="form.configJson"
+              type="textarea"
+              :rows="10"
+              placeholder='Kong 插件 config，例如 {"second":5}'
+            />
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="visible = false">取消</el-button>
@@ -164,26 +180,21 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ApiItem, PluginItem } from '@/types'
 import * as apiMod from '@/api/api'
 import { useUserStore } from '@/stores/user'
 import ListPagination from '@/components/ListPagination.vue'
+import PluginSchemaForm from '@/components/PluginSchemaForm.vue'
 import { usePagination } from '@/composables/usePagination'
-
-const pluginTypes = [
-  'rate-limiting',
-  'cors',
-  'key-auth',
-  'acl',
-  'ip-restriction',
-  'request-size-limiting',
-  'jwt',
-  'basic-auth',
-  'request-termination',
-  'correlation-id',
-]
+import { hasPluginForm, pluginCategories } from '@/constants/kongPlugins'
+import {
+  buildSchemaPayload,
+  defaultSchemaValues,
+  fillSchemaValues,
+  hasSchemaForm,
+} from '@/constants/kongPluginFormSchemas'
 
 const store = useUserStore()
 const list = ref<PluginItem[]>([])
@@ -196,6 +207,9 @@ const apiVisible = ref(false)
 const apiTitle = ref('关联 API')
 const apiRows = ref<ApiItem[]>([])
 const apiLoading = ref(false)
+const schemaConfig = reactive<Record<string, unknown>>({})
+
+const useSchemaForm = computed(() => !hasPluginForm(form.plugin) && hasSchemaForm(form.plugin))
 
 function emptyConfig() {
   return {
@@ -208,6 +222,7 @@ function emptyConfig() {
     credentials: false,
     key_names: 'apikey',
     hide_credentials: false,
+    clock_skew: 300,
     allow: '',
     deny: '',
     allowed_payload_size: 1,
@@ -226,7 +241,14 @@ const form = reactive({
   plugin: 'rate-limiting',
   enabled: true,
   config: emptyConfig(),
+  configJson: '{}',
 })
+
+function resetSchemaConfig(plugin: string, src?: Record<string, unknown>) {
+  const next = src ? fillSchemaValues(plugin, src) : defaultSchemaValues(plugin)
+  Object.keys(schemaConfig).forEach((k) => delete schemaConfig[k])
+  Object.assign(schemaConfig, next)
+}
 
 function asText(value: unknown) {
   if (Array.isArray(value)) return value.join(',')
@@ -246,6 +268,7 @@ function fillConfig(row?: PluginItem) {
   cfg.credentials = Boolean(src.credentials)
   cfg.key_names = asText(src.key_names) || 'apikey'
   cfg.hide_credentials = Boolean(src.hide_credentials)
+  cfg.clock_skew = Number(src.clock_skew || 300)
   cfg.allow = asText(src.allow)
   cfg.deny = asText(src.deny)
   cfg.allowed_payload_size = Number(src.allowed_payload_size || 1)
@@ -259,7 +282,38 @@ function fillConfig(row?: PluginItem) {
   return cfg
 }
 
-function payloadConfig() {
+function fillConfigJson(row?: PluginItem) {
+  const src = row?.config
+  if (!src || typeof src !== 'object') return '{}'
+  try {
+    return JSON.stringify(src, null, 2)
+  } catch {
+    return '{}'
+  }
+}
+
+function payloadConfig(): Record<string, unknown> | null {
+  if (hasSchemaForm(form.plugin) && !hasPluginForm(form.plugin)) {
+    const result = buildSchemaPayload(form.plugin, schemaConfig)
+    if (!result.ok) {
+      ElMessage.warning(result.error)
+      return null
+    }
+    return result.config
+  }
+  if (!hasPluginForm(form.plugin)) {
+    try {
+      const parsed = JSON.parse(form.configJson || '{}')
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        ElMessage.warning('Config JSON 必须是对象')
+        return null
+      }
+      return parsed as Record<string, unknown>
+    } catch {
+      ElMessage.warning('Config JSON 格式无效')
+      return null
+    }
+  }
   const c = form.config
   if (form.plugin === 'rate-limiting') {
     return { minute: c.minute, hour: c.hour, day: c.day, limit_by: c.limit_by }
@@ -282,6 +336,9 @@ function payloadConfig() {
   if (form.plugin === 'basic-auth') {
     return { hide_credentials: c.hide_credentials }
   }
+  if (form.plugin === 'hmac-auth') {
+    return { hide_credentials: c.hide_credentials, clock_skew: c.clock_skew }
+  }
   if (form.plugin === 'request-termination') {
     return { status_code: c.status_code, message: c.message }
   }
@@ -293,7 +350,7 @@ function summarize(row: PluginItem) {
   const parts = Object.entries(cfg)
     .filter(([, v]) => v !== '' && v !== 0 && v !== false && !(Array.isArray(v) && !v.length))
     .slice(0, 4)
-    .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : v}`)
+    .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : typeof v === 'object' ? JSON.stringify(v) : v}`)
   return parts.join('，') || '-'
 }
 
@@ -312,6 +369,8 @@ async function load() {
 
 function onKind() {
   form.config = emptyConfig()
+  form.configJson = '{}'
+  resetSchemaConfig(form.plugin)
 }
 
 function openCreate() {
@@ -320,6 +379,8 @@ function openCreate() {
   form.plugin = 'rate-limiting'
   form.enabled = true
   form.config = emptyConfig()
+  form.configJson = '{}'
+  resetSchemaConfig(form.plugin)
   visible.value = true
 }
 
@@ -342,6 +403,8 @@ function openEdit(row: PluginItem) {
   form.plugin = row.plugin
   form.enabled = row.enabled
   form.config = fillConfig(row)
+  form.configJson = fillConfigJson(row)
+  resetSchemaConfig(row.plugin, (row.config || {}) as Record<string, unknown>)
   visible.value = true
 }
 
@@ -350,13 +413,15 @@ async function save() {
     ElMessage.warning('请填写名称')
     return
   }
+  const config = payloadConfig()
+  if (config == null) return
   saving.value = true
   try {
     const payload = {
       name: form.name.trim(),
       plugin: form.plugin,
       enabled: form.enabled,
-      config: payloadConfig(),
+      config,
     }
     if (editing.value) {
       await apiMod.updatePlugin(store.currentSpaceId, editing.value.id, payload)

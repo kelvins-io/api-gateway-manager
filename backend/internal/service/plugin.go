@@ -17,17 +17,45 @@ import (
 
 var pluginNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
+// allowedPlugins is Kong Gateway 3.4.2 OSS bundled plugins.
 var allowedPlugins = map[string]struct{}{
-	"rate-limiting":         {},
-	"cors":                  {},
-	"key-auth":              {},
 	"acl":                   {},
-	"ip-restriction":        {},
-	"request-size-limiting": {},
-	"jwt":                   {},
+	"acme":                  {},
+	"aws-lambda":            {},
+	"azure-functions":       {},
 	"basic-auth":            {},
-	"request-termination":   {},
+	"bot-detection":         {},
 	"correlation-id":        {},
+	"cors":                  {},
+	"datadog":               {},
+	"file-log":              {},
+	"grpc-gateway":          {},
+	"grpc-web":              {},
+	"hmac-auth":             {},
+	"http-log":              {},
+	"ip-restriction":        {},
+	"jwt":                   {},
+	"key-auth":              {},
+	"ldap-auth":             {},
+	"loggly":                {},
+	"oauth2":                {},
+	"opentelemetry":         {},
+	"post-function":         {},
+	"pre-function":          {},
+	"prometheus":            {},
+	"proxy-cache":           {},
+	"rate-limiting":         {},
+	"request-size-limiting": {},
+	"request-termination":   {},
+	"request-transformer":   {},
+	"response-ratelimiting": {},
+	"response-transformer":  {},
+	"session":               {},
+	"statsd":                {},
+	"syslog":                {},
+	"tcp-log":               {},
+	"udp-log":               {},
+	"zipkin":                {},
 }
 
 type PluginService struct {
@@ -373,7 +401,15 @@ func normalizePluginConfig(kind string, in map[string]interface{}) (map[string]i
 			"echo_downstream": boolField(in, "echo_downstream", false),
 		}, nil
 	default:
-		return nil, fmt.Errorf("%w: unsupported plugin", ErrBadRequest)
+		// Pass through raw config for other Kong 3.4.2 OSS plugins; Kong validates on publish.
+		if in == nil {
+			return map[string]interface{}{}, nil
+		}
+		out := make(map[string]interface{}, len(in))
+		for k, v := range in {
+			out[k] = v
+		}
+		return out, nil
 	}
 }
 

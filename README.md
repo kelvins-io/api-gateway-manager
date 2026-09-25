@@ -85,7 +85,15 @@ npm run dev
 
 ### Plugins
 
-- 隶属于某个空间，可配置 rate-limiting、cors、key-auth、acl、ip-restriction、request-size-limiting、jwt、basic-auth、request-termination、correlation-id
+- 隶属于某个空间；可选类型对齐 Kong Gateway **3.4.2 OSS** 自带插件，新建时按分类展示（中英双语）：
+  - 认证 / Authentication：basic-auth、hmac-auth、jwt、key-auth、ldap-auth、oauth2、session
+  - 安全 / Security：acme、bot-detection、cors、ip-restriction
+  - 流量控制 / Traffic Control：acl、proxy-cache、rate-limiting、request-size-limiting、request-termination、response-ratelimiting
+  - 无服务器 / Serverless：aws-lambda、azure-functions、pre-function、post-function
+  - 分析与监控 / Analytics & Monitoring：datadog、opentelemetry、prometheus、statsd、zipkin
+  - 转换 / Transformations：correlation-id、grpc-gateway、grpc-web、request-transformer、response-transformer
+  - 日志 / Logging：file-log、http-log、loggly、syslog、tcp-log、udp-log
+- 常用插件提供表单；其余插件按 Kong 3.4.2 schema 提供配置表单（嵌套结构用 JSON 字段），发布时由 Kong 校验
 - API 可关联多个 Plugin；发布或更新关联后，同步到该 API 对应的 Kong Service
 - 修改或删除 Plugin 时，会更新仍在发布状态的关联 API
 - 可查看某个 Plugin 当前关联的 API
