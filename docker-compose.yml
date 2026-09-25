@@ -15,6 +15,44 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - agm
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: agm-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AGM_DATABASE_HOST: postgres
+      AGM_DATABASE_PORT: "5432"
+      AGM_DATABASE_USER: agm
+      AGM_DATABASE_PASSWORD: agm123
+      AGM_DATABASE_DBNAME: api_gateway_manager
+      AGM_SERVER_MODE: release
+      AGM_JWT_SECRET: ${AGM_JWT_SECRET:-api-gateway-manager-jwt-secret-change-me}
+    ports:
+      - "${AGM_BACKEND_PORT:-10000}:10000"
+    restart: unless-stopped
+    networks:
+      - agm
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: agm-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "5373:80"
+    restart: unless-stopped
+    networks:
+      - agm
 
 #  kong-db:
 #    image: postgres:16-alpine
@@ -30,6 +68,8 @@ services:
 #      interval: 5s
 #      timeout: 5s
 #      retries: 10
+#    networks:
+#      - agm
 #
 #  kong-migration:
 #    image: kong:3.7
@@ -45,6 +85,8 @@ services:
 #      KONG_PG_DATABASE: kong
 #    command: kong migrations bootstrap
 #    restart: on-failure
+#    networks:
+#      - agm
 #
 #  kong:
 #    image: kong:3.7
@@ -74,6 +116,12 @@ services:
 #      interval: 10s
 #      timeout: 10s
 #      retries: 10
+#    networks:
+#      - agm
+
+networks:
+  agm:
+    driver: bridge
 
 volumes:
   agm_postgres_data:

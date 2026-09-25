@@ -51,6 +51,7 @@ func Load(path string) (*Config, error) {
 	v.SetEnvPrefix("AGM")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
+	bindEnvs(v)
 
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("read config: %w", err)
@@ -61,4 +62,16 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 	return &cfg, nil
+}
+
+func bindEnvs(v *viper.Viper) {
+	keys := []string{
+		"server.port", "server.mode",
+		"database.host", "database.port", "database.user", "database.password", "database.dbname", "database.sslmode",
+		"jwt.secret", "jwt.expire_hours",
+		"log.level", "log.encoding",
+	}
+	for _, key := range keys {
+		_ = v.BindEnv(key)
+	}
 }

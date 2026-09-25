@@ -13,15 +13,53 @@
 
 ## 快速启动
 
-### 1. 启动 PostgreSQL
+### Docker Compose 一键部署（推荐）
 
 ```bash
-docker compose up -d
+docker compose up -d --build
+# 或
+make docker-up
 ```
 
-数据库映射到本机 `localhost:15444`。`docker-compose.yml` 里的 Kong 服务默认注释掉，网关使用已有 Kong，在「网关管理」中填写其 Admin API（如 `http://localhost:8001`）。
+启动后访问：
 
-### 2. 启动后端
+| 服务 | 地址 |
+|------|------|
+| 前端 | http://localhost:5373 |
+| 后端 API | http://localhost:10000 |
+| PostgreSQL | localhost:15444 |
+
+若本机 `10000` 已被占用，可改映射：`AGM_BACKEND_PORT=11000 docker compose up -d --build`。
+
+前端 Nginx 会把 `/api` 反向代理到后端。生产环境建议通过环境变量覆盖 JWT：
+
+```bash
+AGM_JWT_SECRET=your-strong-secret docker compose up -d --build
+```
+
+停止：
+
+```bash
+docker compose down
+# 或
+make docker-down
+```
+
+`docker-compose.yml` 里的 Kong 服务默认注释掉，网关使用已有 Kong，在「网关管理」中填写其 Admin API（如 `http://host.docker.internal:8001`）。
+
+### 本地开发
+
+#### 1. 仅启动 PostgreSQL
+
+```bash
+docker compose up -d postgres
+# 或
+make deps
+```
+
+数据库映射到本机 `localhost:15444`。
+
+#### 2. 启动后端
 
 ```bash
 cd backend
@@ -30,7 +68,7 @@ go run ./cmd/server -config configs/config.yaml
 
 默认监听 `http://localhost:10000`。
 
-### 3. 启动前端
+#### 3. 启动前端
 
 ```bash
 cd frontend
@@ -128,10 +166,13 @@ npm run dev
 ```
 ├── backend/           # Go 后端
 │   ├── cmd/server/
-│   ├── configs/
+│   ├── configs/       # config.yaml（本地）/ config.docker.yaml（容器）
+│   ├── Dockerfile
 │   └── internal/
 ├── frontend/          # Vue3 前端
-├── docker-compose.yml # PostgreSQL（Kong 配置已注释）
+│   ├── Dockerfile
+│   └── nginx.conf     # 静态资源 + /api 反代
+├── docker-compose.yml # postgres + backend + frontend（Kong 已注释）
 └── Makefile
 ```
 
