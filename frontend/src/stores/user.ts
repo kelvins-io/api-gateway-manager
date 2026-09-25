@@ -62,8 +62,15 @@ export const useUserStore = defineStore('user', () => {
 
   async function loadSpaces() {
     spaces.value = (await spaceApi.listSpaces()) || []
-    if (spaces.value.length && !spaces.value.find((s) => s.id === currentSpaceId.value)) {
-      setCurrentSpace(spaces.value[0].id)
+    const usable = spaces.value.filter(
+      (s) => s.status === 'active' && (!s.member_status || s.member_status === 'active'),
+    )
+    if (usable.length && !usable.find((s) => s.id === currentSpaceId.value)) {
+      setCurrentSpace(usable[0].id)
+    }
+    if (!usable.length) {
+      currentSpaceId.value = null
+      localStorage.removeItem('currentSpaceId')
     }
   }
 

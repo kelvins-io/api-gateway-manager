@@ -14,12 +14,11 @@
           <el-icon><OfficeBuilding /></el-icon>
           <span>空间管理</span>
         </el-menu-item>
-        <el-menu-item index="/gateways">
+        <el-menu-item v-if="isSystemAdmin" index="/gateways">
           <el-icon><Connection /></el-icon>
           <span>网关管理</span>
         </el-menu-item>
       </el-menu>
-      <div v-if="!isSystemAdmin" class="menu-hint">提示：网关增删改查仅系统管理员可操作</div>
     </el-aside>
     <el-container>
       <el-header class="header">
@@ -110,13 +109,6 @@ function onLogout() {
 }
 .aside :deep(.el-menu) {
   border-right: none;
-}
-.menu-hint {
-  margin-top: auto;
-  padding: 12px 16px 20px;
-  font-size: 12px;
-  color: #909399;
-  line-height: 1.4;
 }
 .header {
   display: flex;

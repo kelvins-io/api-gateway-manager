@@ -10,21 +10,41 @@
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="name" label="名称">
         <template #default="{ row }">
-          <el-button link type="primary" @click="enterSpace(row)">{{ row.name }}</el-button>
+          <el-button
+            v-if="isUsable(row)"
+            link
+            type="primary"
+            @click="enterSpace(row)"
+          >
+            {{ row.name }}
+          </el-button>
+          <span v-else>{{ row.name }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="prefix" label="路径前缀" width="160" />
       <el-table-column prop="description" label="描述" />
-      <el-table-column prop="owner_id" label="所有者 ID" width="120" />
-      <el-table-column label="操作" width="220">
+      <el-table-column label="状态" width="140">
         <template #default="{ row }">
-          <el-button link type="primary" @click="$router.push(`/spaces/${row.id}/members`)">成员</el-button>
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-tooltip :disabled="!row.group_count" content="空间下仍有分组，不能删除" placement="top">
-            <span>
-              <el-button link type="danger" @click="onDelete(row)" :disabled="!!row.group_count">删除</el-button>
-            </span>
-          </el-tooltip>
+          <el-tag :type="spaceStatusType(row)" size="small">{{ spaceStatusLabel(row) }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="owner_id" label="所有者 ID" width="120" />
+      <el-table-column label="操作" width="280">
+        <template #default="{ row }">
+          <template v-if="store.isSystemAdmin && row.status === 'pending'">
+            <el-button link type="success" @click="onApproveSpace(row)">通过</el-button>
+            <el-button link type="danger" @click="onRejectSpace(row)">拒绝</el-button>
+          </template>
+          <template v-else-if="isUsable(row)">
+            <el-button link type="primary" @click="$router.push(`/spaces/${row.id}/members`)">成员</el-button>
+            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-tooltip :disabled="!row.group_count" content="空间下仍有分组，不能删除" placement="top">
+              <span>
+                <el-button link type="danger" @click="onDelete(row)" :disabled="!!row.group_count">删除</el-button>
+              </span>
+            </el-tooltip>
+          </template>
+          <span v-else class="muted">—</span>
         </template>
       </el-table-column>
     </el-table>
@@ -64,7 +84,7 @@
         <el-table-column prop="description" label="描述" />
         <el-table-column label="操作" width="100">
           <template #default="{ row }">
-            <el-button link type="primary" @click="onJoin(row)">加入</el-button>
+            <el-button link type="primary" @click="onJoin(row)">申请加入</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -94,6 +114,21 @@ const createVisible = ref(false)
 const joinVisible = ref(false)
 const editing = ref<Space | null>(null)
 const form = reactive({ name: '', description: '', prefix: '' })
+
+function isUsable(row: Space) {
+  return row.status === 'active' && (!row.member_status || row.member_status === 'active')
+}
+
+function spaceStatusLabel(row: Space) {
+  if (row.status === 'pending') return '待审批'
+  if (row.member_status === 'pending') return '加入待确认'
+  return '已生效'
+}
+
+function spaceStatusType(row: Space) {
+  if (row.status === 'pending' || row.member_status === 'pending') return 'warning'
+  return 'success'
+}
 
 async function load() {
   loading.value = true
@@ -137,8 +172,12 @@ async function save() {
       ElMessage.success('更新成功')
     } else {
       const space = await spaceApi.createSpace({ ...form })
-      store.setCurrentSpace(space.id)
-      ElMessage.success('空间创建成功')
+      if (space.status === 'active') {
+        store.setCurrentSpace(space.id)
+        ElMessage.success('空间创建成功')
+      } else {
+        ElMessage.success('已提交申请，等待系统管理员审批')
+      }
     }
     createVisible.value = false
     await load()
@@ -151,6 +190,20 @@ async function onDelete(row: Space) {
   await ElMessageBox.confirm(`确认删除空间「${row.name}」？`, '提示', { type: 'warning' })
   await spaceApi.deleteSpace(row.id)
   ElMessage.success('已删除')
+  await load()
+}
+
+async function onApproveSpace(row: Space) {
+  await ElMessageBox.confirm(`确认通过空间「${row.name}」的申请？`, '提示', { type: 'info' })
+  await spaceApi.approveSpace(row.id)
+  ElMessage.success('已通过')
+  await load()
+}
+
+async function onRejectSpace(row: Space) {
+  await ElMessageBox.confirm(`确认拒绝并删除空间「${row.name}」的申请？`, '提示', { type: 'warning' })
+  await spaceApi.rejectSpace(row.id)
+  ElMessage.success('已拒绝')
   await load()
 }
 
@@ -171,7 +224,7 @@ async function openJoin() {
 
 async function onJoin(row: Space) {
   await spaceApi.joinSpace(row.id)
-  ElMessage.success('加入成功')
+  ElMessage.success(store.isSystemAdmin ? '加入成功' : '已提交加入申请，等待管理员确认')
   joinVisible.value = false
   await load()
 }
@@ -184,5 +237,8 @@ onMounted(load)
   margin-bottom: 16px;
   display: flex;
   gap: 8px;
+}
+.muted {
+  color: #909399;
 }
 </style>

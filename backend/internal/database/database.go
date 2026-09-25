@@ -44,7 +44,24 @@ func AutoMigrate(db *gorm.DB) error {
 	); err != nil {
 		return err
 	}
+	if err := backfillApprovalStatuses(db); err != nil {
+		return err
+	}
 	return ensureJoinPrimaryKeys(db)
+}
+
+func backfillApprovalStatuses(db *gorm.DB) error {
+	if db.Migrator().HasTable(&model.Space{}) {
+		if err := db.Exec(`UPDATE spaces SET status = ? WHERE status IS NULL OR status = ''`, model.SpaceStatusActive).Error; err != nil {
+			return fmt.Errorf("backfill space status: %w", err)
+		}
+	}
+	if db.Migrator().HasTable(&model.SpaceMember{}) {
+		if err := db.Exec(`UPDATE space_members SET status = ? WHERE status IS NULL OR status = ''`, model.MemberStatusActive).Error; err != nil {
+			return fmt.Errorf("backfill space member status: %w", err)
+		}
+	}
+	return nil
 }
 
 func ensureJoinPrimaryKeys(db *gorm.DB) error {

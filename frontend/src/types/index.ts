@@ -17,6 +17,8 @@ export interface Space {
   description: string
   prefix: string
   owner_id: number
+  status: string
+  member_status?: string
   group_count?: number
   created_at?: string
 }
@@ -26,6 +28,7 @@ export interface SpaceMember {
   space_id: number
   user_id: number
   role: string
+  status: string
   user?: User
 }
 

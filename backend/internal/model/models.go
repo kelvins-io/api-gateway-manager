@@ -14,6 +14,12 @@ const (
 	RoleSpaceAdmin  = "space_admin"
 	RoleMember      = "member"
 
+	SpaceStatusPending = "pending"
+	SpaceStatusActive  = "active"
+
+	MemberStatusPending = "pending"
+	MemberStatusActive  = "active"
+
 	APIStatusDraft     = "draft"
 	APIStatusPublished = "published"
 	APIStatusOffline   = "offline"
@@ -32,14 +38,16 @@ type User struct {
 }
 
 type Space struct {
-	ID          uint64    `gorm:"primaryKey" json:"id"`
-	Name        string    `gorm:"size:128;uniqueIndex;not null" json:"name"`
-	Description string    `gorm:"size:512" json:"description"`
-	Prefix      string    `gorm:"size:128;not null;default:''" json:"prefix"` // path prefix, e.g. /order
-	OwnerID     uint64    `gorm:"not null;index" json:"owner_id"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	GroupCount  int64     `gorm:"-" json:"group_count"`
+	ID           uint64    `gorm:"primaryKey" json:"id"`
+	Name         string    `gorm:"size:128;uniqueIndex;not null" json:"name"`
+	Description  string    `gorm:"size:512" json:"description"`
+	Prefix       string    `gorm:"size:128;not null;default:''" json:"prefix"` // path prefix, e.g. /order
+	OwnerID      uint64    `gorm:"not null;index" json:"owner_id"`
+	Status       string    `gorm:"size:32;not null;default:active;index" json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	GroupCount   int64     `gorm:"-" json:"group_count"`
+	MemberStatus string    `gorm:"-" json:"member_status,omitempty"` // current user's membership status
 }
 
 type SpaceMember struct {
@@ -47,6 +55,7 @@ type SpaceMember struct {
 	SpaceID   uint64    `gorm:"not null;uniqueIndex:idx_space_user" json:"space_id"`
 	UserID    uint64    `gorm:"not null;uniqueIndex:idx_space_user" json:"user_id"`
 	Role      string    `gorm:"size:32;not null;default:member" json:"role"`
+	Status    string    `gorm:"size:32;not null;default:active;index" json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 

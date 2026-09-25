@@ -56,8 +56,15 @@ func Setup(db *gorm.DB, jwtMgr *jwtutil.Manager, log *zap.Logger, h Handlers) *g
 			authed.GET("/spaces/:id", middleware.RequireSpaceRole(db, "id"), h.Space.Get)
 			authed.PUT("/spaces/:id", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Space.Update)
 			authed.DELETE("/spaces/:id", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Space.Delete)
+			authed.POST("/spaces/:id/approve", middleware.RequireSystemAdmin(), h.Space.Approve)
+			authed.POST("/spaces/:id/reject", middleware.RequireSystemAdmin(), h.Space.Reject)
 			authed.POST("/spaces/:id/join", h.Space.Join)
 			authed.GET("/spaces/:id/members", middleware.RequireSpaceRole(db, "id"), h.Space.ListMembers)
+			authed.GET("/spaces/:id/members/candidates", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Space.ListCandidateUsers)
+			authed.POST("/spaces/:id/members", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Space.AddMember)
+			authed.POST("/spaces/:id/members/:uid/approve", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Space.ApproveMember)
+			authed.POST("/spaces/:id/members/:uid/reject", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Space.RejectMember)
+			authed.DELETE("/spaces/:id/members/:uid", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Space.RemoveMember)
 			authed.PUT("/spaces/:id/members/:uid/role", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Space.UpdateMemberRole)
 
 			// groups under space
@@ -174,8 +181,19 @@ func requireAPIAccess(db *gorm.DB, apiSvc *service.APIService, write bool) gin.H
 
 func checkSpaceMember(c *gin.Context, db *gorm.DB, spaceID uint64, write bool) {
 	userID := middleware.GetUserID(c)
+	var space model.Space
+	if err := db.First(&space, spaceID).Error; err != nil {
+		response.NotFound(c, "space not found")
+		c.Abort()
+		return
+	}
+	if space.Status != model.SpaceStatusActive {
+		response.Forbidden(c, "space is not active")
+		c.Abort()
+		return
+	}
 	var member model.SpaceMember
-	if err := db.Where("space_id = ? AND user_id = ?", spaceID, userID).First(&member).Error; err != nil {
+	if err := db.Where("space_id = ? AND user_id = ? AND status = ?", spaceID, userID, model.MemberStatusActive).First(&member).Error; err != nil {
 		response.Forbidden(c, "not a member of this space")
 		c.Abort()
 		return

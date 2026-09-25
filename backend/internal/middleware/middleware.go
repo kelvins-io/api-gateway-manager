@@ -51,8 +51,9 @@ func RequireSystemAdmin() gin.HandlerFunc {
 	}
 }
 
-// RequireSpaceRole ensures the current user is a member of the space with at least one of the allowed roles.
-// System admins always pass. spaceIDParam is the path param name for space id.
+// RequireSpaceRole ensures the current user is an active member of an active space
+// with at least one of the allowed roles. System admins always pass.
+// spaceIDParam is the path param name for space id.
 func RequireSpaceRole(db *gorm.DB, spaceIDParam string, allowedRoles ...string) gin.HandlerFunc {
 	allowed := map[string]struct{}{}
 	for _, r := range allowedRoles {
@@ -72,9 +73,21 @@ func RequireSpaceRole(db *gorm.DB, spaceIDParam string, allowedRoles ...string) 
 			return
 		}
 
+		var space model.Space
+		if err := db.First(&space, spaceID).Error; err != nil {
+			response.NotFound(c, "space not found")
+			c.Abort()
+			return
+		}
+		if space.Status != model.SpaceStatusActive {
+			response.Forbidden(c, "space is not active")
+			c.Abort()
+			return
+		}
+
 		userID, _ := c.Get(ContextUserID)
 		var member model.SpaceMember
-		err := db.Where("space_id = ? AND user_id = ?", spaceID, userID).First(&member).Error
+		err := db.Where("space_id = ? AND user_id = ? AND status = ?", spaceID, userID, model.MemberStatusActive).First(&member).Error
 		if err != nil {
 			response.Forbidden(c, "not a member of this space")
 			c.Abort()
