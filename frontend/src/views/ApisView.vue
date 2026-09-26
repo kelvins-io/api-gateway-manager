@@ -71,7 +71,7 @@
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="600" fixed="right">
+      <el-table-column label="操作" width="680" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button link type="success" @click="onPublish(row)">发布</el-button>
@@ -101,6 +101,7 @@
           <el-button link type="primary" @click="openVersions(row)">版本</el-button>
           <el-button link type="primary" @click="openPlugins(row)">Plugins</el-button>
           <el-button link type="primary" @click="openConsumers(row)">Consumers</el-button>
+          <el-button link type="primary" @click="copyCurl(row)">复制 Curl</el-button>
           <el-tooltip :disabled="canDelete(row)" :content="deleteHint(row)" placement="top">
             <span>
               <el-button link type="danger" @click="onDelete(row)" :disabled="!canDelete(row)">删除</el-button>
@@ -659,6 +660,104 @@ function fullAccessPath(row: ApiItem, path: string): string {
     p = `${prefix}${p}`
   }
   return `${gatewayDomain(row)}${p}`
+}
+
+function accessPathOnly(row: ApiItem, path: string): string {
+  let p = path.startsWith('/') ? path : `/${path}`
+  const prefix = spacePrefixOf(row)
+  if (prefix && p !== prefix && !p.startsWith(`${prefix}/`)) {
+    p = `${prefix}${p}`
+  }
+  return p
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function firstConfigName(value: unknown, fallback: string): string {
+  if (Array.isArray(value) && value.length) return String(value[0]).trim() || fallback
+  if (typeof value === 'string' && value.trim()) {
+    return value.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean)[0] || fallback
+  }
+  return fallback
+}
+
+function authCurlFlags(row: ApiItem): string[] {
+  if (!row.auth_enabled || !row.auth_plugin) return []
+  const cfg = row.auth_config || {}
+  switch (row.auth_plugin) {
+    case 'key-auth': {
+      const key = firstConfigName(cfg.key_names, 'apikey')
+      return [`  -H ${shellQuote(`${key}: YOUR_API_KEY`)}`]
+    }
+    case 'basic-auth':
+      return [`  -u ${shellQuote('USERNAME:PASSWORD')}`]
+    case 'jwt': {
+      const header = firstConfigName(cfg.header_names, 'Authorization')
+      const value = header.toLowerCase() === 'authorization' ? 'Bearer YOUR_JWT' : 'YOUR_JWT'
+      return [`  -H ${shellQuote(`${header}: ${value}`)}`]
+    }
+    case 'hmac-auth':
+      return [
+        `  -H ${shellQuote('Date: Tue, 07 Jun 2014 20:51:35 GMT')}`,
+        `  -H ${shellQuote('Authorization: hmac username="USERNAME", algorithm="hmac-sha256", headers="date request-line", signature="SIGNATURE"')}`,
+      ]
+    default:
+      return []
+  }
+}
+
+function buildCurl(row: ApiItem): string {
+  const protocol = protocolsOf(row)[0] || 'http'
+  const method =
+    (row.access_methods || 'GET')
+      .split(/[,;\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)[0] || 'GET'
+  const path = accessPathOnly(row, splitPaths(row.access_path)[0] || '/')
+  const domain = gatewayDomain(row).replace(/^(https?:)?\/\//i, '').replace(/\/$/, '')
+  const accessHosts = (row.access_hosts || '')
+    .split(/[,;\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const urlHost = domain || accessHosts[0] || 'localhost'
+  const url = `${protocol}://${urlHost}${path}`
+
+  const lines = [`curl -X ${method} ${shellQuote(url)}`]
+  if (domain && accessHosts[0] && accessHosts[0].toLowerCase() !== domain.toLowerCase()) {
+    lines.push(`  -H ${shellQuote(`Host: ${accessHosts[0]}`)}`)
+  }
+  const headers = row.access_headers || {}
+  for (const [name, values] of Object.entries(headers)) {
+    if (!name.trim()) continue
+    for (const value of values || []) {
+      lines.push(`  -H ${shellQuote(`${name}: ${value}`)}`)
+    }
+  }
+  lines.push(...authCurlFlags(row))
+  return lines.join(' \\\n')
+}
+
+async function copyCurl(row: ApiItem) {
+  const text = buildCurl(row)
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const el = document.createElement('textarea')
+      el.value = text
+      el.style.position = 'fixed'
+      el.style.left = '-9999px'
+      document.body.appendChild(el)
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
+    }
+    ElMessage.success('Curl 已复制到剪贴板')
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  }
 }
 
 function splitPaths(raw: string): string[] {
