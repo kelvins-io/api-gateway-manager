@@ -108,6 +108,7 @@ func Setup(db *gorm.DB, jwtMgr *jwtutil.Manager, log *zap.Logger, h Handlers) *g
 			// apis under group
 			authed.GET("/groups/:gid/apis", requireGroupAccess(db, h.GroupSvc, false), h.API.List)
 			authed.POST("/groups/:gid/apis", requireGroupAccess(db, h.GroupSvc, true), h.API.Create)
+			authed.POST("/groups/:gid/apis/import-openapi", requireGroupAccess(db, h.GroupSvc, true), h.API.ImportOpenAPI)
 
 			authed.GET("/market/apis", h.API.ListMarket)
 

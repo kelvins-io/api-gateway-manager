@@ -3,6 +3,7 @@
     <div class="toolbar">
       <el-button @click="$router.push('/groups')">返回分组</el-button>
       <el-button type="primary" @click="openCreate">新建 API</el-button>
+      <el-button @click="openImport">导入 OpenAPI</el-button>
       <el-button @click="load">刷新</el-button>
     </div>
 
@@ -319,6 +320,80 @@
       </div>
       <el-empty v-else description="无法解析该版本配置" />
     </el-dialog>
+
+    <el-dialog
+      v-model="importVisible"
+      title="导入 OpenAPI"
+      width="820px"
+      body-class="api-dialog-body"
+      @closed="resetImport"
+    >
+      <el-form label-width="120px">
+        <el-form-item label="OpenAPI 文件" required>
+          <el-upload
+            ref="importUploadRef"
+            :auto-upload="false"
+            :limit="1"
+            accept=".json,.yaml,.yml,application/json,application/x-yaml,text/yaml"
+            :on-change="onImportFileChange"
+            :on-remove="onImportFileRemove"
+            :on-exceed="onImportExceed"
+          >
+            <el-button>选择文件</el-button>
+            <template #tip>
+              <div class="el-upload__tip">支持 OpenAPI 3 / Swagger 2 的 JSON、YAML 文件（最大 8MB）</div>
+            </template>
+          </el-upload>
+        </el-form-item>
+        <el-form-item label="后端服务协议">
+          <el-select v-model="importForm.service_protocol" clearable placeholder="默认读取文档 servers" style="width: 100%">
+            <el-option v-for="p in protocolOptions" :key="p" :label="p" :value="p" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="后端服务主机">
+          <el-input v-model="importForm.service_host" placeholder="可选，覆盖文档中的 host" />
+        </el-form-item>
+        <el-form-item label="后端服务端口">
+          <el-input-number v-model="importForm.service_port" :min="0" :max="65535" :step="1" />
+          <span class="unit">0 表示使用文档默认</span>
+        </el-form-item>
+        <el-form-item label="后端服务Path">
+          <el-input v-model="importForm.service_path" placeholder="可选，如 /v1" />
+        </el-form-item>
+        <div v-if="spacePrefix" class="path-hint import-hint">
+          导入后接入路径将自动拼接空间前缀 {{ spacePrefix }}
+        </div>
+      </el-form>
+
+      <div v-if="importPreview.length" class="import-preview">
+        <div class="import-preview-title">预览（共 {{ importPreview.length }} 条）</div>
+        <el-table :data="importPreview" stripe max-height="280" size="small">
+          <el-table-column prop="name" label="名称" min-width="140" />
+          <el-table-column label="接入路径" min-width="200">
+            <template #default="{ row }">
+              <div>{{ row.access_path }}</div>
+              <div v-if="row.access_path_prefixed !== row.access_path" class="path-hint">
+                → {{ row.access_path_prefixed }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="access_methods" label="方法" width="140" />
+          <el-table-column label="上游" min-width="180">
+            <template #default="{ row }">
+              {{ row.service_protocol }}://{{ row.service_host }}:{{ row.service_port }}{{ row.service_path }}
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <template #footer>
+        <el-button @click="importVisible = false">取消</el-button>
+        <el-button :disabled="!importFile" :loading="importParsing" @click="parseImport">解析预览</el-button>
+        <el-button type="primary" :disabled="!importPreview.length" :loading="importing" @click="confirmImport">
+          确认导入
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -326,8 +401,10 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { UploadFile, UploadInstance, UploadRawFile } from 'element-plus'
 import type { ApiItem, ApiVersion, ConsumerItem, PluginItem, UpstreamItem } from '@/types'
 import * as apiMod from '@/api/api'
+import type { ImportOpenAPIItem } from '@/api/api'
 import { useUserStore } from '@/stores/user'
 import ListPagination from '@/components/ListPagination.vue'
 import { usePagination } from '@/composables/usePagination'
@@ -359,6 +436,19 @@ const methodOptions = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS
 const protocolOptions = ['http', 'https', 'grpc', 'grpcs']
 const upstreams = ref<UpstreamItem[]>([])
 const plugins = ref<PluginItem[]>([])
+
+const importVisible = ref(false)
+const importParsing = ref(false)
+const importing = ref(false)
+const importFile = ref<File | null>(null)
+const importPreview = ref<ImportOpenAPIItem[]>([])
+const importUploadRef = ref<UploadInstance>()
+const importForm = reactive({
+  service_protocol: '' as string,
+  service_host: '',
+  service_port: 0,
+  service_path: '',
+})
 
 const form = reactive({
   name: '',
@@ -706,6 +796,105 @@ function openCreate() {
   visible.value = true
 }
 
+function openImport() {
+  resetImport()
+  importVisible.value = true
+}
+
+function resetImport() {
+  importFile.value = null
+  importPreview.value = []
+  importForm.service_protocol = ''
+  importForm.service_host = ''
+  importForm.service_port = 0
+  importForm.service_path = ''
+  importUploadRef.value?.clearFiles()
+}
+
+function onImportFileChange(file: UploadFile) {
+  importPreview.value = []
+  importFile.value = (file.raw as UploadRawFile) || null
+}
+
+function onImportFileRemove() {
+  importFile.value = null
+  importPreview.value = []
+}
+
+function onImportExceed(files: File[]) {
+  const file = files[0]
+  if (!file) return
+  importUploadRef.value?.clearFiles()
+  importFile.value = file
+  importPreview.value = []
+  // Re-bind for display: el-upload keeps the new file when we clear then start.
+  const raw = file as UploadRawFile
+  if (!raw.uid) raw.uid = Date.now()
+  importUploadRef.value?.handleStart(raw)
+}
+
+function importOptions() {
+  return {
+    service_protocol: importForm.service_protocol || undefined,
+    service_host: importForm.service_host.trim() || undefined,
+    service_port: importForm.service_port > 0 ? importForm.service_port : undefined,
+    service_path: importForm.service_path.trim() || undefined,
+  }
+}
+
+async function parseImport() {
+  if (!importFile.value) {
+    ElMessage.warning('请先选择 OpenAPI 文件')
+    return
+  }
+  importParsing.value = true
+  try {
+    const result = await apiMod.importOpenAPI(gid, importFile.value, {
+      ...importOptions(),
+      dry_run: true,
+    })
+    importPreview.value = result.items || []
+    if (!importPreview.value.length) {
+      ElMessage.warning('文档中未解析到可用的 API 路径')
+    } else {
+      ElMessage.success(`解析到 ${importPreview.value.length} 条 API`)
+    }
+  } finally {
+    importParsing.value = false
+  }
+}
+
+async function confirmImport() {
+  if (!importFile.value) {
+    ElMessage.warning('请先选择 OpenAPI 文件')
+    return
+  }
+  if (!importPreview.value.length) {
+    ElMessage.warning('请先解析预览')
+    return
+  }
+  await ElMessageBox.confirm(
+    `确认导入 ${importPreview.value.length} 条 API？接入路径将自动加上空间前缀。`,
+    '导入确认',
+  )
+  importing.value = true
+  try {
+    const result = await apiMod.importOpenAPI(gid, importFile.value, importOptions())
+    const ok = result.created?.length || 0
+    const fail = result.failed?.length || 0
+    if (fail > 0) {
+      const first = result.failed?.[0]
+      ElMessage.warning(`成功 ${ok} 条，失败 ${fail} 条${first ? `：${first.name} ${first.error}` : ''}`)
+    } else {
+      ElMessage.success(`成功导入 ${ok} 条 API`)
+    }
+    importVisible.value = false
+    await load()
+  } finally {
+    importing.value = false
+  }
+}
+
 function openEdit(row: ApiItem) {
   editing.value = row
   form.name = row.name
@@ -881,6 +1070,16 @@ onMounted(async () => {
   color: #909399;
   font-size: 12px;
   line-height: 1.4;
+}
+.import-hint {
+  margin: 0 0 12px 120px;
+}
+.import-preview {
+  margin-top: 8px;
+}
+.import-preview-title {
+  margin-bottom: 8px;
+  font-weight: 600;
 }
 .unit {
   margin-left: 8px;

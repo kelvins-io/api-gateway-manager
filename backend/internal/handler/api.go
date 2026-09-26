@@ -1,6 +1,10 @@
 package handler
 
 import (
+	"io"
+	"strconv"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/kelvins-io/api-gateway-manager/internal/pkg/response"
 	"github.com/kelvins-io/api-gateway-manager/internal/service"
@@ -30,6 +34,57 @@ func (h *APIHandler) Create(c *gin.Context) {
 		return
 	}
 	response.OK(c, api)
+}
+
+func (h *APIHandler) ImportOpenAPI(c *gin.Context) {
+	groupID, ok := parseID(c, "gid")
+	if !ok {
+		return
+	}
+	file, err := c.FormFile("file")
+	if err != nil {
+		response.BadRequest(c, "please upload an OpenAPI JSON or YAML file")
+		return
+	}
+	f, err := file.Open()
+	if err != nil {
+		response.BadRequest(c, "failed to open uploaded file")
+		return
+	}
+	defer f.Close()
+	content, err := io.ReadAll(io.LimitReader(f, 8<<20)) // 8 MiB
+	if err != nil {
+		response.BadRequest(c, "failed to read uploaded file")
+		return
+	}
+	port := 0
+	if raw := strings.TrimSpace(c.PostForm("service_port")); raw != "" {
+		p, err := strconv.Atoi(raw)
+		if err != nil {
+			response.BadRequest(c, "invalid service_port")
+			return
+		}
+		port = p
+	}
+	dryRun := false
+	switch strings.ToLower(strings.TrimSpace(c.PostForm("dry_run"))) {
+	case "1", "true", "yes":
+		dryRun = true
+	}
+	result, err := h.svc.ImportOpenAPI(groupID, service.ImportOpenAPIOptions{
+		Content:         content,
+		Filename:        file.Filename,
+		DryRun:          dryRun,
+		ServiceProtocol: c.PostForm("service_protocol"),
+		ServiceHost:     c.PostForm("service_host"),
+		ServicePort:     port,
+		ServicePath:     c.PostForm("service_path"),
+	})
+	if err != nil {
+		mapError(c, err)
+		return
+	}
+	response.OK(c, result)
 }
 
 func (h *APIHandler) ListBySpace(c *gin.Context) {

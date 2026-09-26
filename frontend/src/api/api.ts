@@ -29,6 +29,51 @@ export function createApi(gid: number, data: Partial<ApiItem>) {
   return request<ApiItem>(() => http.post(`/groups/${gid}/apis`, data))
 }
 
+export interface ImportOpenAPIItem {
+  name: string
+  access_path: string
+  access_path_prefixed: string
+  access_methods: string
+  access_protocols: string
+  service_protocol: string
+  service_host: string
+  service_port: number
+  service_path: string
+}
+
+export interface ImportOpenAPIResult {
+  items: ImportOpenAPIItem[]
+  created?: ApiItem[]
+  failed?: { name: string; path: string; error: string }[]
+  total: number
+}
+
+export function importOpenAPI(
+  gid: number,
+  file: File,
+  opts?: {
+    dry_run?: boolean
+    service_protocol?: string
+    service_host?: string
+    service_port?: number
+    service_path?: string
+  },
+) {
+  const form = new FormData()
+  form.append('file', file)
+  if (opts?.dry_run) form.append('dry_run', 'true')
+  if (opts?.service_protocol) form.append('service_protocol', opts.service_protocol)
+  if (opts?.service_host) form.append('service_host', opts.service_host)
+  if (opts?.service_port) form.append('service_port', String(opts.service_port))
+  if (opts?.service_path) form.append('service_path', opts.service_path)
+  return request<ImportOpenAPIResult>(() =>
+    http.post(`/groups/${gid}/apis/import-openapi`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    }),
+  )
+}
+
 export function updateApi(aid: number, data: Partial<ApiItem>) {
   return request<ApiItem>(() => http.put(`/apis/${aid}`, data))
 }
