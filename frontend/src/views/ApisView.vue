@@ -5,9 +5,26 @@
       <el-button type="primary" @click="openCreate">新建 API</el-button>
       <el-button @click="openImport">导入 OpenAPI</el-button>
       <el-button @click="load">刷新</el-button>
+      <el-button type="success" :disabled="!selected.length" :loading="batchBusy" @click="batchPublish">
+        发布
+      </el-button>
+      <el-button type="warning" :disabled="!selected.length" :loading="batchBusy" @click="batchOffline">
+        下线
+      </el-button>
+      <el-button type="danger" :disabled="!selected.length" :loading="batchBusy" @click="batchDelete">
+        删除
+      </el-button>
     </div>
 
-    <el-table :data="paged" v-loading="loading" stripe>
+    <el-table
+      ref="tableRef"
+      :data="paged"
+      row-key="id"
+      v-loading="loading"
+      stripe
+      @selection-change="onSelectionChange"
+    >
+      <el-table-column type="selection" width="48" />
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column prop="name" label="名称" min-width="120" />
       <el-table-column label="接入协议" width="160">
@@ -410,7 +427,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { UploadFile, UploadInstance, UploadRawFile } from 'element-plus'
+import type { TableInstance, UploadFile, UploadInstance, UploadRawFile } from 'element-plus'
 import type { ApiItem, ApiVersion, ConsumerItem, PluginItem, UpstreamItem } from '@/types'
 import * as apiMod from '@/api/api'
 import type { ImportOpenAPIItem } from '@/api/api'
@@ -424,6 +441,9 @@ const gid = Number(route.params.gid)
 const spacePrefix = computed(() => (store.currentSpace?.prefix || '').replace(/\/$/, ''))
 const list = ref<ApiItem[]>([])
 const { page, pageSize, total, paged, pageSizes } = usePagination(list)
+const tableRef = ref<TableInstance>()
+const selected = ref<ApiItem[]>([])
+const batchBusy = ref(false)
 const versions = ref<ApiVersion[]>([])
 const loading = ref(false)
 const saving = ref(false)
@@ -553,6 +573,67 @@ function deleteHint(row: ApiItem) {
   if (row.status === 'published') return '已发布的 API 不允许删除'
   if (hasConsumers(row)) return '已关联 Consumer 的 API 不允许删除'
   return ''
+}
+
+function onSelectionChange(rows: ApiItem[]) {
+  selected.value = rows
+}
+
+async function runBatch(
+  action: string,
+  targets: ApiItem[],
+  skipped: number,
+  confirmType: '' | 'warning' | 'error' | undefined,
+  run: (row: ApiItem) => Promise<unknown>,
+) {
+  if (!targets.length) {
+    ElMessage.warning(
+      skipped > 0 ? `已跳过 ${skipped} 个不符合条件的 API，没有可${action}的项` : `请先勾选 API`,
+    )
+    return
+  }
+  const skipTip = skipped > 0 ? `将跳过 ${skipped} 个不符合条件的项。` : ''
+  await ElMessageBox.confirm(`确认批量${action} ${targets.length} 个 API？${skipTip}`, `批量${action}`, {
+    type: confirmType,
+  })
+  batchBusy.value = true
+  let ok = 0
+  let fail = 0
+  try {
+    for (const row of targets) {
+      try {
+        await run(row)
+        ok++
+      } catch {
+        fail++
+      }
+    }
+    const parts = [`成功 ${ok}`]
+    if (fail) parts.push(`失败 ${fail}`)
+    if (skipped) parts.push(`跳过 ${skipped}`)
+    ElMessage.success(`批量${action}完成：${parts.join('，')}`)
+    selected.value = []
+    tableRef.value?.clearSelection()
+    await load()
+  } finally {
+    batchBusy.value = false
+  }
+}
+
+async function batchPublish() {
+  await runBatch('发布', selected.value, 0, undefined, (row) => apiMod.publishApi(row.id))
+}
+
+async function batchOffline() {
+  const all = selected.value
+  const targets = all.filter(canOffline)
+  await runBatch('下线', targets, all.length - targets.length, 'warning', (row) => apiMod.offlineApi(row.id))
+}
+
+async function batchDelete() {
+  const all = selected.value
+  const targets = all.filter(canDelete)
+  await runBatch('删除', targets, all.length - targets.length, 'warning', (row) => apiMod.deleteApi(row.id))
 }
 
 function protocolsOf(row: ApiItem): string[] {
@@ -786,6 +867,8 @@ async function load() {
   loading.value = true
   try {
     list.value = (await apiMod.listApis(gid)) || []
+    selected.value = []
+    tableRef.value?.clearSelection()
   } finally {
     loading.value = false
   }
