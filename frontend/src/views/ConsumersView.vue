@@ -47,6 +47,7 @@
 
     <el-dialog v-model="apiVisible" :title="apiTitle" width="1100px">
       <el-table :data="apiDialogPaged" empty-text="暂无关联 API" max-height="420" stripe>
+        <el-table-column prop="name" label="API名称" min-width="140" />
         <el-table-column label="所属空间" min-width="110">
           <template #default="{ row }">{{ row.group?.space?.name || '-' }}</template>
         </el-table-column>
