@@ -3,6 +3,15 @@
     <div class="toolbar">
       <el-button @click="$router.push('/groups')">返回分组</el-button>
       <el-button type="primary" :disabled="!store.currentSpaceId" @click="openCreate">新建 Upstream</el-button>
+      <el-input
+        v-model="nameQuery"
+        clearable
+        placeholder="按名称搜索"
+        style="width: 220px"
+        :disabled="!store.currentSpaceId"
+        @keyup.enter="applyFilter"
+      />
+      <el-button type="primary" :disabled="!store.currentSpaceId" @click="applyFilter">搜索</el-button>
       <el-button @click="load">刷新</el-button>
       <span v-if="store.currentSpace" class="hint">当前空间：{{ store.currentSpace.name }}</span>
     </div>
@@ -112,7 +121,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UpstreamHealthSide, UpstreamItem } from '@/types'
 import * as apiMod from '@/api/api'
@@ -123,12 +132,26 @@ import { usePagination } from '@/composables/usePagination'
 
 const store = useUserStore()
 const list = ref<UpstreamItem[]>([])
-const { page, pageSize, total, paged, pageSizes } = usePagination(list)
+const nameQuery = ref('')
+const filtered = computed(() => {
+  const name = nameQuery.value.trim().toLowerCase()
+  if (!name) return list.value
+  return list.value.filter((row) => row.name.toLowerCase().includes(name))
+})
+const { page, pageSize, total, paged, pageSizes, resetPage } = usePagination(filtered)
 const loading = ref(false)
 const saving = ref(false)
 const visible = ref(false)
 const editing = ref<UpstreamItem | null>(null)
 const hashOptions = ['none', 'consumer', 'ip', 'header', 'cookie', 'path', 'query_arg', 'uri_capture']
+
+watch(nameQuery, () => {
+  resetPage()
+})
+
+function applyFilter() {
+  resetPage()
+}
 
 function emptyActive(): UpstreamHealthSide {
   return {
@@ -264,6 +287,7 @@ onMounted(load)
 .toolbar {
   margin-bottom: 16px;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }

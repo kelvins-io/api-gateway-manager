@@ -4,6 +4,15 @@
       <el-button @click="$router.push('/groups')">返回分组</el-button>
       <el-button type="primary" :disabled="!store.currentSpaceId" @click="openCreate">新建 Consumer</el-button>
       <el-button :disabled="!store.currentSpaceId" @click="onSync">同步到网关</el-button>
+      <el-input
+        v-model="nameQuery"
+        clearable
+        placeholder="按名称搜索"
+        style="width: 220px"
+        :disabled="!store.currentSpaceId"
+        @keyup.enter="applyFilter"
+      />
+      <el-button type="primary" :disabled="!store.currentSpaceId" @click="applyFilter">搜索</el-button>
       <el-button @click="load">刷新</el-button>
       <span v-if="store.currentSpace" class="hint">当前空间：{{ store.currentSpace.name }}</span>
     </div>
@@ -155,7 +164,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ApiItem, ConsumerCredential, ConsumerItem } from '@/types'
 import * as apiMod from '@/api/api'
@@ -168,7 +177,21 @@ const jwtAlgorithms = ['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512', 'ES
 
 const store = useUserStore()
 const list = ref<ConsumerItem[]>([])
-const { page, pageSize, total, paged, pageSizes } = usePagination(list)
+const nameQuery = ref('')
+const filtered = computed(() => {
+  const name = nameQuery.value.trim().toLowerCase()
+  if (!name) return list.value
+  return list.value.filter((row) => row.username.toLowerCase().includes(name))
+})
+const { page, pageSize, total, paged, pageSizes, resetPage } = usePagination(filtered)
+
+watch(nameQuery, () => {
+  resetPage()
+})
+
+function applyFilter() {
+  resetPage()
+}
 const apis = ref<ApiItem[]>([])
 const loading = ref(false)
 const saving = ref(false)
@@ -340,6 +363,7 @@ onMounted(load)
 .toolbar {
   margin-bottom: 16px;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }

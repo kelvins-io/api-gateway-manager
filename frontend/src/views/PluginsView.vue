@@ -3,6 +3,15 @@
     <div class="toolbar">
       <el-button @click="$router.push('/groups')">返回分组</el-button>
       <el-button type="primary" :disabled="!store.currentSpaceId" @click="openCreate">新建 Plugin</el-button>
+      <el-input
+        v-model="nameQuery"
+        clearable
+        placeholder="按名称搜索"
+        style="width: 220px"
+        :disabled="!store.currentSpaceId"
+        @keyup.enter="applyFilter"
+      />
+      <el-button type="primary" :disabled="!store.currentSpaceId" @click="applyFilter">搜索</el-button>
       <el-button @click="load">刷新</el-button>
       <span v-if="store.currentSpace" class="hint">当前空间：{{ store.currentSpace.name }}</span>
     </div>
@@ -191,7 +200,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ApiItem, PluginItem } from '@/types'
 import * as apiMod from '@/api/api'
@@ -223,7 +232,21 @@ import {
 
 const store = useUserStore()
 const list = ref<PluginItem[]>([])
-const { page, pageSize, total, paged, pageSizes } = usePagination(list)
+const nameQuery = ref('')
+const filtered = computed(() => {
+  const name = nameQuery.value.trim().toLowerCase()
+  if (!name) return list.value
+  return list.value.filter((row) => row.name.toLowerCase().includes(name))
+})
+const { page, pageSize, total, paged, pageSizes, resetPage } = usePagination(filtered)
+
+watch(nameQuery, () => {
+  resetPage()
+})
+
+function applyFilter() {
+  resetPage()
+}
 const loading = ref(false)
 const saving = ref(false)
 const visible = ref(false)
@@ -523,6 +546,7 @@ onMounted(load)
 .toolbar {
   margin-bottom: 16px;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
