@@ -31,11 +31,6 @@
         </template>
       </el-table-column>
       <el-table-column prop="access_methods" label="接入方法" width="140" />
-      <el-table-column label="上游" min-width="220">
-        <template #default="{ row }">
-          {{ upstreamLabel(row) }}
-        </template>
-      </el-table-column>
       <el-table-column label="认证" width="120">
         <template #default="{ row }">
           <span v-if="row.auth_enabled">{{ row.auth_plugin }}</span>
@@ -45,6 +40,11 @@
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
           <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="上游" min-width="220">
+        <template #default="{ row }">
+          {{ upstreamLabel(row) }}
         </template>
       </el-table-column>
       <el-table-column prop="current_version" label="当前版本" width="100" />
@@ -58,7 +58,7 @@
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button link type="success" @click="onPublish(row)">发布</el-button>
-          <el-tooltip :disabled="canOffline(row)" content="已关联 Consumer 的 API 不允许下线" placement="top">
+          <el-tooltip :disabled="canOffline(row)" :content="offlineHint(row)" placement="top">
             <span>
               <el-button link type="warning" @click="onOffline(row)" :disabled="!canOffline(row)">下线</el-button>
             </span>
@@ -537,6 +537,12 @@ function hasConsumers(row: ApiItem) {
 
 function canOffline(row: ApiItem) {
   return row.status === 'published' && !hasConsumers(row)
+}
+
+function offlineHint(row: ApiItem) {
+  if (row.status !== 'published') return '仅已发布的 API 可以下线'
+  if (hasConsumers(row)) return '已关联 Consumer 的 API 不允许下线'
+  return ''
 }
 
 function canDelete(row: ApiItem) {
