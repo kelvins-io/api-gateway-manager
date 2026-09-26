@@ -88,13 +88,15 @@ func (c *Client) Publish(ctx context.Context, apiID, spaceID, groupID uint64, sn
 	}
 	routeName := model.KongRouteName(spaceID, groupID, apiID)
 	route := &kong.Route{
-		Name:      kong.String(routeName),
-		Paths:     kong.StringSlice(paths...),
-		Methods:   kong.StringSlice(methods...),
-		Protocols: kong.StringSlice(accessProtocols(snap.AccessProtocols)...),
-		StripPath: kong.Bool(snap.EffectiveStripPath()),
-		Service:   &kong.Service{ID: service.ID},
-		Tags:      kong.StringSlice(fmt.Sprintf("agm-api-%d", apiID)),
+		Name:              kong.String(routeName),
+		Paths:             kong.StringSlice(paths...),
+		Methods:           kong.StringSlice(methods...),
+		Protocols:         kong.StringSlice(accessProtocols(snap.AccessProtocols)...),
+		StripPath:         kong.Bool(snap.EffectiveStripPath()),
+		RequestBuffering:  kong.Bool(snap.EffectiveRequestBuffering()),
+		ResponseBuffering: kong.Bool(snap.EffectiveResponseBuffering()),
+		Service:           &kong.Service{ID: service.ID},
+		Tags:              kong.StringSlice(fmt.Sprintf("agm-api-%d", apiID)),
 	}
 	if hosts := splitAccessHosts(snap.AccessHosts); len(hosts) > 0 {
 		route.Hosts = kong.StringSlice(hosts...)

@@ -146,6 +146,8 @@ func (s *APIService) snapshotOf(ctx context.Context, api *model.API) (model.APIC
 		ServiceWriteTimeout:   api.ServiceWriteTimeout,
 		ServiceReadTimeout:    api.ServiceReadTimeout,
 		AccessStripPath:       api.AccessStripPath,
+		RequestBuffering:      boolPtr(api.RequestBuffering),
+		ResponseBuffering:     boolPtr(api.ResponseBuffering),
 		KongHost:              api.ServiceHost,
 		Plugins:               pluginSnapshots(api.Plugins),
 	}
@@ -220,4 +222,8 @@ func nilIfZero(id uint64) interface{} {
 		return nil
 	}
 	return id
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }

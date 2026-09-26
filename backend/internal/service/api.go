@@ -42,6 +42,8 @@ type CreateAPIInput struct {
 	ServiceWriteTimeout   *int                   `json:"service_write_timeout"`
 	ServiceReadTimeout    *int                   `json:"service_read_timeout"`
 	AccessStripPath       *bool                  `json:"access_strip_path"`
+	RequestBuffering      *bool                  `json:"request_buffering"`
+	ResponseBuffering     *bool                  `json:"response_buffering"`
 	AuthEnabled           bool                   `json:"auth_enabled"`
 	AuthPlugin            string                 `json:"auth_plugin"`
 	AuthConfig            map[string]interface{} `json:"auth_config"`
@@ -67,6 +69,8 @@ type UpdateAPIInput struct {
 	ServiceWriteTimeout   *int                   `json:"service_write_timeout"`
 	ServiceReadTimeout    *int                   `json:"service_read_timeout"`
 	AccessStripPath       *bool                  `json:"access_strip_path"`
+	RequestBuffering      *bool                  `json:"request_buffering"`
+	ResponseBuffering     *bool                  `json:"response_buffering"`
 	AuthEnabled           *bool                  `json:"auth_enabled"`
 	AuthPlugin            string                 `json:"auth_plugin"`
 	AuthConfig            map[string]interface{} `json:"auth_config"`
@@ -93,6 +97,14 @@ func (s *APIService) Create(groupID uint64, in CreateAPIInput) (*model.API, erro
 	strip := true
 	if in.AccessStripPath != nil {
 		strip = *in.AccessStripPath
+	}
+	reqBuf := true
+	if in.RequestBuffering != nil {
+		reqBuf = *in.RequestBuffering
+	}
+	respBuf := true
+	if in.ResponseBuffering != nil {
+		respBuf = *in.ResponseBuffering
 	}
 	paths := model.SplitPaths(in.AccessPath)
 	if len(paths) == 0 {
@@ -137,12 +149,20 @@ func (s *APIService) Create(groupID uint64, in CreateAPIInput) (*model.API, erro
 		ServiceWriteTimeout:   svcFields.WriteTimeout,
 		ServiceReadTimeout:    svcFields.ReadTimeout,
 		AccessStripPath:       strip,
+		RequestBuffering:      reqBuf,
+		ResponseBuffering:     respBuf,
 		Status:                model.APIStatusDraft,
 	}
 	if err := applyAuthFields(api, in.AuthEnabled, in.AuthPlugin, in.AuthConfig); err != nil {
 		return nil, err
 	}
-	if err := s.db.Create(api).Error; err != nil {
+	if err := s.db.Select(
+		"GroupID", "Name", "AccessPath", "AccessMethods", "AccessProtocols", "AccessHosts", "AccessHeaders",
+		"ServiceProtocol", "ServiceHostKind", "ServiceHost", "ServiceUpstreamID", "ServicePort", "ServicePath",
+		"ServiceRetries", "ServiceConnectTimeout", "ServiceWriteTimeout", "ServiceReadTimeout",
+		"AccessStripPath", "RequestBuffering", "ResponseBuffering",
+		"AuthEnabled", "AuthPlugin", "AuthConfig", "Status",
+	).Create(api).Error; err != nil {
 		return nil, err
 	}
 	if err := s.replacePlugins(api.ID, group.SpaceID, in.PluginIDs); err != nil {
@@ -261,6 +281,12 @@ func (s *APIService) Update(ctx context.Context, id uint64, in UpdateAPIInput) (
 	}
 	if in.AccessStripPath != nil {
 		updates["access_strip_path"] = *in.AccessStripPath
+	}
+	if in.RequestBuffering != nil {
+		updates["request_buffering"] = *in.RequestBuffering
+	}
+	if in.ResponseBuffering != nil {
+		updates["response_buffering"] = *in.ResponseBuffering
 	}
 	if in.AuthEnabled != nil {
 		if err := validateAuthUpdate(api.AuthEnabled, api.AuthPlugin, *in.AuthEnabled, in.AuthPlugin); err != nil {
@@ -637,6 +663,10 @@ func (s *APIService) SwitchVersion(ctx context.Context, id uint64, version strin
 		snap.AccessMethods = snap.LegacyMethods
 	}
 	snap.AccessStripPath = snap.EffectiveStripPath()
+	reqBuf := snap.EffectiveRequestBuffering()
+	respBuf := snap.EffectiveResponseBuffering()
+	snap.RequestBuffering = &reqBuf
+	snap.ResponseBuffering = &respBuf
 	snap.LegacyStripPath = nil
 	snap.ServiceProtocol = snap.EffectiveProtocol()
 	snap.ServiceHostKind = snap.EffectiveHostKind()
@@ -701,6 +731,8 @@ func (s *APIService) SwitchVersion(ctx context.Context, id uint64, version strin
 		"service_write_timeout":   snap.ServiceWriteTimeout,
 		"service_read_timeout":    snap.ServiceReadTimeout,
 		"access_strip_path":       snap.AccessStripPath,
+		"request_buffering":       snap.EffectiveRequestBuffering(),
+		"response_buffering":      snap.EffectiveResponseBuffering(),
 		"status":                  model.APIStatusPublished,
 		"current_version":         version,
 		"kong_service_id":         result.ServiceID,

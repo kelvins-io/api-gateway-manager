@@ -119,6 +119,8 @@ type API struct {
 	ServiceWriteTimeout   int            `gorm:"not null;default:60000" json:"service_write_timeout"`
 	ServiceReadTimeout    int            `gorm:"not null;default:60000" json:"service_read_timeout"`
 	AccessStripPath       bool           `gorm:"default:true" json:"access_strip_path"`
+	RequestBuffering      bool           `gorm:"not null;default:true" json:"request_buffering"`
+	ResponseBuffering     bool           `gorm:"not null;default:true" json:"response_buffering"`
 	AuthEnabled           bool           `gorm:"not null;default:false" json:"auth_enabled"`
 	AuthPlugin            string         `gorm:"size:32;not null;default:''" json:"auth_plugin"`
 	AuthConfig            datatypes.JSON `gorm:"type:jsonb" json:"auth_config"`
@@ -193,6 +195,8 @@ type APIConfigSnapshot struct {
 	LegacyReadTimeout     *int                `json:"read_timeout,omitempty"`
 	AccessStripPath       bool                `json:"access_strip_path"`
 	LegacyStripPath       *bool               `json:"strip_path,omitempty"`
+	RequestBuffering      *bool               `json:"request_buffering,omitempty"`
+	ResponseBuffering     *bool               `json:"response_buffering,omitempty"`
 	Plugins               []PluginSnapshot    `json:"plugins"`
 }
 
@@ -213,6 +217,22 @@ func (s APIConfigSnapshot) EffectiveStripPath() bool {
 		return *s.LegacyStripPath
 	}
 	return false
+}
+
+// EffectiveRequestBuffering defaults to true (Kong route default) when unset in old snapshots.
+func (s APIConfigSnapshot) EffectiveRequestBuffering() bool {
+	if s.RequestBuffering == nil {
+		return true
+	}
+	return *s.RequestBuffering
+}
+
+// EffectiveResponseBuffering defaults to true (Kong route default) when unset in old snapshots.
+func (s APIConfigSnapshot) EffectiveResponseBuffering() bool {
+	if s.ResponseBuffering == nil {
+		return true
+	}
+	return *s.ResponseBuffering
 }
 
 func (s APIConfigSnapshot) EffectiveProtocol() string {

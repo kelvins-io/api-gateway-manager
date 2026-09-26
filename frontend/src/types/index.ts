@@ -146,6 +146,8 @@ export interface ApiItem {
   service_write_timeout: number
   service_read_timeout: number
   access_strip_path: boolean
+  request_buffering?: boolean
+  response_buffering?: boolean
   auth_enabled: boolean
   auth_plugin: string
   auth_config?: Record<string, unknown>

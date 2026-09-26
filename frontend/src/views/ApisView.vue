@@ -211,6 +211,12 @@
         <el-form-item label="接入 Strip Path">
           <el-switch v-model="form.access_strip_path" />
         </el-form-item>
+        <el-form-item label="Request Buffering">
+          <el-switch v-model="form.request_buffering" />
+        </el-form-item>
+        <el-form-item label="Response Buffering">
+          <el-switch v-model="form.response_buffering" />
+        </el-form-item>
         <el-divider />
         <el-form-item label="后端服务协议">
           <el-select v-model="form.service_protocol" style="width: 100%">
@@ -334,6 +340,8 @@
         <el-descriptions-item label="接入 Hosts">{{ detailSnap.access_hosts || '-' }}</el-descriptions-item>
         <el-descriptions-item label="接入 Headers">{{ formatHeaders(detailSnap.access_headers) }}</el-descriptions-item>
         <el-descriptions-item label="接入 Strip Path">{{ detailSnap.access_strip_path ? '开启' : '关闭' }}</el-descriptions-item>
+        <el-descriptions-item label="Request Buffering">{{ detailSnap.request_buffering !== false ? '开启' : '关闭' }}</el-descriptions-item>
+        <el-descriptions-item label="Response Buffering">{{ detailSnap.response_buffering !== false ? '开启' : '关闭' }}</el-descriptions-item>
         <el-descriptions-item label="后端服务协议">{{ detailSnap.service_protocol || '-' }}</el-descriptions-item>
         <el-descriptions-item label="后端服务主机">{{ detailSnap.kong_host || detailSnap.service_host || detailSnap.upstream_url || '-' }}</el-descriptions-item>
         <el-descriptions-item label="后端服务端口">{{ detailSnap.service_port || '-' }}</el-descriptions-item>
@@ -538,6 +546,8 @@ const form = reactive({
   service_write_timeout: 60000,
   service_read_timeout: 60000,
   access_strip_path: true,
+  request_buffering: true,
+  response_buffering: true,
   plugin_ids: [] as number[],
   auth_enabled: false,
   auth_plugin: 'key-auth',
@@ -832,6 +842,8 @@ interface VersionSnapshot {
   service_write_timeout: number
   service_read_timeout: number
   access_strip_path: boolean
+  request_buffering?: boolean
+  response_buffering?: boolean
   plugins: PluginItem[]
   pluginsRecorded: boolean
 }
@@ -874,6 +886,8 @@ function parseSnapshot(snap: Record<string, unknown> | string): VersionSnapshot 
       service_write_timeout: Number(obj.service_write_timeout ?? obj.write_timeout ?? 0),
       service_read_timeout: Number(obj.service_read_timeout ?? obj.read_timeout ?? 0),
       access_strip_path: readStripPath(obj),
+      request_buffering: readBuffering(obj, 'request_buffering'),
+      response_buffering: readBuffering(obj, 'response_buffering'),
       plugins: parsePluginSnapshots(obj.plugins),
       pluginsRecorded: Object.prototype.hasOwnProperty.call(obj, 'plugins'),
     }
@@ -917,6 +931,11 @@ function summarize(snap: Record<string, unknown> | string) {
 function readStripPath(obj: Record<string, unknown>) {
   if (typeof obj.access_strip_path === 'boolean') return obj.access_strip_path
   if (typeof obj.strip_path === 'boolean') return obj.strip_path
+  return true
+}
+
+function readBuffering(obj: Record<string, unknown>, key: string) {
+  if (typeof obj[key] === 'boolean') return obj[key] as boolean
   return true
 }
 
@@ -1023,6 +1042,8 @@ function openCreate() {
   form.headerList = []
   resetService()
   form.access_strip_path = true
+  form.request_buffering = true
+  form.response_buffering = true
   form.plugin_ids = []
   form.auth_enabled = false
   form.auth_plugin = 'key-auth'
@@ -1164,6 +1185,8 @@ function openEdit(row: ApiItem) {
   form.service_write_timeout = row.service_write_timeout ?? 60000
   form.service_read_timeout = row.service_read_timeout ?? 60000
   form.access_strip_path = row.access_strip_path
+  form.request_buffering = row.request_buffering !== false
+  form.response_buffering = row.response_buffering !== false
   form.plugin_ids = (row.plugins || []).map((p) => p.id)
   form.auth_enabled = !!row.auth_enabled
   form.auth_plugin = row.auth_plugin || 'key-auth'
@@ -1215,6 +1238,8 @@ async function save() {
     service_write_timeout: form.service_write_timeout,
     service_read_timeout: form.service_read_timeout,
     access_strip_path: form.access_strip_path,
+    request_buffering: form.request_buffering,
+    response_buffering: form.response_buffering,
     plugin_ids: form.plugin_ids,
     auth_enabled: form.auth_enabled,
     auth_plugin: form.auth_enabled ? form.auth_plugin : '',
