@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/kelvins-io/api-gateway-manager/internal/middleware"
+	"github.com/kelvins-io/api-gateway-manager/internal/model"
 	"github.com/kelvins-io/api-gateway-manager/internal/pkg/response"
 	"github.com/kelvins-io/api-gateway-manager/internal/service"
 )
@@ -246,4 +248,34 @@ func (h *APIHandler) ListMarket(c *gin.Context) {
 		return
 	}
 	response.OK(c, list)
+}
+
+func (h *APIHandler) ListMarketLinkableConsumers(c *gin.Context) {
+	id, ok := parseID(c, "aid")
+	if !ok {
+		return
+	}
+	list, err := h.svc.ListMarketLinkableConsumers(middleware.GetUserID(c), middleware.GetRole(c) == model.RoleSystemAdmin, id)
+	if err != nil {
+		mapError(c, err)
+		return
+	}
+	response.OK(c, list)
+}
+
+func (h *APIHandler) LinkMarketConsumers(c *gin.Context) {
+	id, ok := parseID(c, "aid")
+	if !ok {
+		return
+	}
+	var in service.LinkMarketConsumersInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := h.svc.LinkMarketConsumers(c.Request.Context(), middleware.GetUserID(c), middleware.GetRole(c) == model.RoleSystemAdmin, id, in.ConsumerIDs); err != nil {
+		mapError(c, err)
+		return
+	}
+	response.OK(c, nil)
 }

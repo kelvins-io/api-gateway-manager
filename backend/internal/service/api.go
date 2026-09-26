@@ -466,6 +466,149 @@ func (s *APIService) ListMarket() ([]model.API, error) {
 	return list, err
 }
 
+func (s *APIService) ensureMarketAPI(id uint64) (*model.API, error) {
+	api, err := s.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if !api.Shared || api.Status != model.APIStatusPublished {
+		return nil, fmt.Errorf("%w: api is not available in market", ErrNotFound)
+	}
+	return api, nil
+}
+
+func (s *APIService) adminSpaceIDs(userID uint64, isSystemAdmin bool) ([]uint64, error) {
+	if isSystemAdmin {
+		var ids []uint64
+		if err := s.db.Model(&model.Space{}).Where("status = ?", model.SpaceStatusActive).Pluck("id", &ids).Error; err != nil {
+			return nil, err
+		}
+		return ids, nil
+	}
+	var ids []uint64
+	if err := s.db.Model(&model.SpaceMember{}).
+		Where("user_id = ? AND role = ? AND status = ?", userID, model.RoleSpaceAdmin, model.MemberStatusActive).
+		Pluck("space_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+// ListMarketLinkableConsumers returns consumers in spaces the user administers that share the
+// API auth plugin and are not yet linked to this market API.
+func (s *APIService) ListMarketLinkableConsumers(userID uint64, isSystemAdmin bool, apiID uint64) ([]model.Consumer, error) {
+	api, err := s.ensureMarketAPI(apiID)
+	if err != nil {
+		return nil, err
+	}
+	if !api.AuthEnabled || api.AuthPlugin == "" {
+		return []model.Consumer{}, nil
+	}
+	spaceIDs, err := s.adminSpaceIDs(userID, isSystemAdmin)
+	if err != nil {
+		return nil, err
+	}
+	if len(spaceIDs) == 0 {
+		return []model.Consumer{}, nil
+	}
+	var linkedIDs []uint64
+	if err := s.db.Table("api_consumers").Where("api_id = ?", api.ID).Pluck("consumer_id", &linkedIDs).Error; err != nil {
+		return nil, err
+	}
+	q := s.db.Preload("Credentials").Preload("Space").
+		Where("space_id IN ?", spaceIDs).
+		Order("id desc")
+	if len(linkedIDs) > 0 {
+		q = q.Where("id NOT IN ?", linkedIDs)
+	}
+	var consumers []model.Consumer
+	if err := q.Find(&consumers).Error; err != nil {
+		return nil, err
+	}
+	out := make([]model.Consumer, 0, len(consumers))
+	for _, c := range consumers {
+		if consumerHasPlugin(c, api.AuthPlugin) {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+type LinkMarketConsumersInput struct {
+	ConsumerIDs []uint64 `json:"consumer_ids" binding:"required"`
+}
+
+// LinkMarketConsumers appends selected consumers (from spaces the user administers) to a market API.
+func (s *APIService) LinkMarketConsumers(ctx context.Context, userID uint64, isSystemAdmin bool, apiID uint64, consumerIDs []uint64) error {
+	api, err := s.ensureMarketAPI(apiID)
+	if err != nil {
+		return err
+	}
+	if !api.AuthEnabled || api.AuthPlugin == "" {
+		return fmt.Errorf("%w: api has auth disabled", ErrBadRequest)
+	}
+	consumerIDs = uniqueIDs(consumerIDs)
+	if len(consumerIDs) == 0 {
+		return fmt.Errorf("%w: consumer_ids required", ErrBadRequest)
+	}
+	spaceIDs, err := s.adminSpaceIDs(userID, isSystemAdmin)
+	if err != nil {
+		return err
+	}
+	if len(spaceIDs) == 0 {
+		return fmt.Errorf("%w: space admin required", ErrForbidden)
+	}
+	adminSpaces := map[uint64]struct{}{}
+	for _, id := range spaceIDs {
+		adminSpaces[id] = struct{}{}
+	}
+	var linkedIDs []uint64
+	if err := s.db.Table("api_consumers").Where("api_id = ?", api.ID).Pluck("consumer_id", &linkedIDs).Error; err != nil {
+		return err
+	}
+	linked := map[uint64]struct{}{}
+	for _, id := range linkedIDs {
+		linked[id] = struct{}{}
+	}
+	var consumers []model.Consumer
+	if err := s.db.Preload("Credentials").Where("id IN ?", consumerIDs).Find(&consumers).Error; err != nil {
+		return err
+	}
+	if len(consumers) != len(consumerIDs) {
+		return fmt.Errorf("%w: consumer not found", ErrBadRequest)
+	}
+	toLink := make([]model.Consumer, 0, len(consumers))
+	for _, c := range consumers {
+		if _, ok := adminSpaces[c.SpaceID]; !ok {
+			return fmt.Errorf("%w: space admin required for consumer %s", ErrForbidden, c.Username)
+		}
+		if _, ok := linked[c.ID]; ok {
+			continue
+		}
+		if !consumerHasPlugin(c, api.AuthPlugin) {
+			return fmt.Errorf("%w: consumer %s has no %s credential", ErrBadRequest, c.Username, api.AuthPlugin)
+		}
+		toLink = append(toLink, c)
+	}
+	if len(toLink) == 0 {
+		return nil
+	}
+	if err := s.db.Model(&model.API{ID: api.ID}).Association("Consumers").Append(toLink); err != nil {
+		return err
+	}
+	svc := NewConsumerService(s.db)
+	for _, c := range toLink {
+		if err := svc.setACLGroup(ctx, c.ID, model.APIACLGroup(api.ID), true); err != nil {
+			return err
+		}
+	}
+	saved, err := s.Get(api.ID)
+	if err != nil {
+		return err
+	}
+	return applyAPIPlugins(ctx, saved)
+}
+
 func (s *APIService) SwitchVersion(ctx context.Context, id uint64, version string) (*model.API, error) {
 	api, err := s.Get(id)
 	if err != nil {

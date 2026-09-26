@@ -9,7 +9,7 @@
     </div>
 
     <el-table :data="paged" v-loading="loading" stripe>
-      <el-table-column prop="username" label="用户名" />
+      <el-table-column prop="username" label="名称" />
       <el-table-column label="关联 API" width="100">
         <template #default="{ row }">
           <el-button

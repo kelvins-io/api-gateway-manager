@@ -399,23 +399,15 @@ func (s *ConsumerService) resyncBoundAPIs(ctx context.Context, consumerID uint64
 	return nil
 }
 
-// ReconcileSpace pushes every consumer in the space onto the gateways currently bound by its groups,
-// and removes them from gateways the space no longer uses.
+// ReconcileSpace pushes every consumer in the space onto the gateways currently needed
+// (space group gateways plus gateways of linked published APIs).
 func (s *ConsumerService) ReconcileSpace(ctx context.Context, spaceID uint64) error {
 	var consumers []model.Consumer
 	if err := s.db.Preload("Credentials").Where("space_id = ?", spaceID).Find(&consumers).Error; err != nil {
 		return err
 	}
-	gateways, err := s.spaceGateways(spaceID)
-	if err != nil {
-		return err
-	}
-	wanted := map[uint64]model.Gateway{}
-	for _, gw := range gateways {
-		wanted[gw.ID] = gw
-	}
 	for i := range consumers {
-		if err := s.syncToGateways(ctx, &consumers[i], wanted); err != nil {
+		if err := s.syncOne(ctx, &consumers[i]); err != nil {
 			return err
 		}
 	}
@@ -423,15 +415,36 @@ func (s *ConsumerService) ReconcileSpace(ctx context.Context, spaceID uint64) er
 }
 
 func (s *ConsumerService) syncOne(ctx context.Context, consumer *model.Consumer) error {
-	gateways, err := s.spaceGateways(consumer.SpaceID)
+	wanted, err := s.consumerWantedGateways(consumer.ID, consumer.SpaceID)
 	if err != nil {
 		return err
 	}
+	return s.syncToGateways(ctx, consumer, wanted)
+}
+
+func (s *ConsumerService) consumerWantedGateways(consumerID, spaceID uint64) (map[uint64]model.Gateway, error) {
 	wanted := map[uint64]model.Gateway{}
-	for _, gw := range gateways {
+	spaceGWs, err := s.spaceGateways(spaceID)
+	if err != nil {
+		return nil, err
+	}
+	for _, gw := range spaceGWs {
 		wanted[gw.ID] = gw
 	}
-	return s.syncToGateways(ctx, consumer, wanted)
+	var apis []model.API
+	if err := s.db.Joins("JOIN api_consumers ON api_consumers.api_id = apis.id").
+		Where("api_consumers.consumer_id = ? AND apis.status = ?", consumerID, model.APIStatusPublished).
+		Preload("Group.Gateway").
+		Find(&apis).Error; err != nil {
+		return nil, err
+	}
+	for _, api := range apis {
+		if api.Group == nil || api.Group.Gateway == nil {
+			continue
+		}
+		wanted[api.Group.Gateway.ID] = *api.Group.Gateway
+	}
+	return wanted, nil
 }
 
 func (s *ConsumerService) spaceGateways(spaceID uint64) ([]model.Gateway, error) {

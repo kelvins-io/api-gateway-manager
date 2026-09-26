@@ -105,6 +105,14 @@ export function listMarketApis() {
   return request<ApiItem[]>(() => http.get('/market/apis'))
 }
 
+export function listMarketLinkableConsumers(aid: number) {
+  return request<ConsumerItem[]>(() => http.get(`/market/apis/${aid}/linkable-consumers`))
+}
+
+export function linkMarketConsumers(aid: number, consumerIds: number[]) {
+  return request<null>(() => http.post(`/market/apis/${aid}/link-consumers`, { consumer_ids: consumerIds }))
+}
+
 export function switchVersion(aid: number, version: string) {
   return request<ApiItem>(() => http.post(`/apis/${aid}/switch-version`, { version }))
 }
