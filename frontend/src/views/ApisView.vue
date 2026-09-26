@@ -361,7 +361,10 @@
           <el-input v-model="importForm.service_path" placeholder="可选，如 /v1" />
         </el-form-item>
         <div v-if="spacePrefix" class="path-hint import-hint">
-          导入后接入路径将自动拼接空间前缀 {{ spacePrefix }}
+          导入后接入路径将自动拼接空间前缀 {{ spacePrefix }}；当前分组内同名 API 会更新而非新建。
+        </div>
+        <div v-else class="path-hint import-hint">
+          当前分组内同名 API 会更新而非新建。
         </div>
       </el-form>
 
@@ -369,6 +372,12 @@
         <div class="import-preview-title">预览（共 {{ importPreview.length }} 条）</div>
         <el-table :data="importPreview" stripe max-height="280" size="small">
           <el-table-column prop="name" label="名称" min-width="140" />
+          <el-table-column label="操作" width="90">
+            <template #default="{ row }">
+              <el-tag v-if="row.action === 'update'" type="warning" size="small">更新</el-tag>
+              <el-tag v-else type="success" size="small">新建</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="接入路径" min-width="200">
             <template #default="{ row }">
               <div>{{ row.access_path }}</div>
@@ -857,7 +866,11 @@ async function parseImport() {
     if (!importPreview.value.length) {
       ElMessage.warning('文档中未解析到可用的 API 路径')
     } else {
-      ElMessage.success(`解析到 ${importPreview.value.length} 条 API`)
+      const updateCount = importPreview.value.filter((i) => i.action === 'update').length
+      const createCount = importPreview.value.length - updateCount
+      ElMessage.success(
+        `解析到 ${importPreview.value.length} 条（新建 ${createCount}，更新同名 ${updateCount}）`,
+      )
     }
   } finally {
     importParsing.value = false
@@ -873,20 +886,29 @@ async function confirmImport() {
     ElMessage.warning('请先解析预览')
     return
   }
+  const updateCount = importPreview.value.filter((i) => i.action === 'update').length
+  const createCount = importPreview.value.length - updateCount
+  const parts = [
+    createCount > 0 ? `新建 ${createCount} 条` : '',
+    updateCount > 0 ? `更新同名 ${updateCount} 条` : '',
+  ].filter(Boolean)
   await ElMessageBox.confirm(
-    `确认导入 ${importPreview.value.length} 条 API？接入路径将自动加上空间前缀。`,
+    `确认导入？将${parts.join('，')}；接入路径会自动加上空间前缀。`,
     '导入确认',
   )
   importing.value = true
   try {
     const result = await apiMod.importOpenAPI(gid, importFile.value, importOptions())
-    const ok = result.created?.length || 0
+    const created = result.created?.length || 0
+    const updated = result.updated?.length || 0
     const fail = result.failed?.length || 0
     if (fail > 0) {
       const first = result.failed?.[0]
-      ElMessage.warning(`成功 ${ok} 条，失败 ${fail} 条${first ? `：${first.name} ${first.error}` : ''}`)
+      ElMessage.warning(
+        `新建 ${created}、更新 ${updated}、失败 ${fail}${first ? `：${first.name} ${first.error}` : ''}`,
+      )
     } else {
-      ElMessage.success(`成功导入 ${ok} 条 API`)
+      ElMessage.success(`导入完成：新建 ${created} 条，更新 ${updated} 条`)
     }
     importVisible.value = false
     await load()

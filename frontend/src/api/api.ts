@@ -39,11 +39,14 @@ export interface ImportOpenAPIItem {
   service_host: string
   service_port: number
   service_path: string
+  action: 'create' | 'update'
+  existing_id?: number
 }
 
 export interface ImportOpenAPIResult {
   items: ImportOpenAPIItem[]
   created?: ApiItem[]
+  updated?: ApiItem[]
   failed?: { name: string; path: string; error: string }[]
   total: number
 }

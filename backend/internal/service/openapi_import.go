@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -39,6 +40,8 @@ type ImportOpenAPIItem struct {
 	ServiceHost        string `json:"service_host"`
 	ServicePort        int    `json:"service_port"`
 	ServicePath        string `json:"service_path"`
+	Action             string `json:"action"` // create | update
+	ExistingID         uint64 `json:"existing_id,omitempty"`
 }
 
 type ImportOpenAPIFail struct {
@@ -50,6 +53,7 @@ type ImportOpenAPIFail struct {
 type ImportOpenAPIResult struct {
 	Items   []ImportOpenAPIItem `json:"items"`
 	Created []model.API         `json:"created,omitempty"`
+	Updated []model.API         `json:"updated,omitempty"`
 	Failed  []ImportOpenAPIFail `json:"failed,omitempty"`
 	Total   int                 `json:"total"`
 }
@@ -79,7 +83,7 @@ type openAPIOperation struct {
 	Servers     []openAPIServer `json:"servers" yaml:"servers"`
 }
 
-func (s *APIService) ImportOpenAPI(groupID uint64, opt ImportOpenAPIOptions) (*ImportOpenAPIResult, error) {
+func (s *APIService) ImportOpenAPI(ctx context.Context, groupID uint64, opt ImportOpenAPIOptions) (*ImportOpenAPIResult, error) {
 	group, err := s.getGroup(groupID)
 	if err != nil {
 		return nil, err
@@ -97,12 +101,23 @@ func (s *APIService) ImportOpenAPI(groupID uint64, opt ImportOpenAPIOptions) (*I
 		return nil, fmt.Errorf("%w: no API paths found in OpenAPI document", ErrBadRequest)
 	}
 
+	existingByName, err := s.apisByNameInGroup(groupID)
+	if err != nil {
+		return nil, err
+	}
+
 	for i := range items {
 		prefixed := model.ApplyPathPrefix(space.Prefix, []string{items[i].AccessPath})
 		if len(prefixed) > 0 {
 			items[i].AccessPathPrefixed = prefixed[0]
 		} else {
 			items[i].AccessPathPrefixed = items[i].AccessPath
+		}
+		if existing, ok := existingByName[items[i].Name]; ok {
+			items[i].Action = "update"
+			items[i].ExistingID = existing.ID
+		} else {
+			items[i].Action = "create"
 		}
 	}
 
@@ -111,9 +126,36 @@ func (s *APIService) ImportOpenAPI(groupID uint64, opt ImportOpenAPIOptions) (*I
 		return result, nil
 	}
 
-	created := make([]model.API, 0, len(items))
+	created := make([]model.API, 0)
+	updated := make([]model.API, 0)
 	failed := make([]ImportOpenAPIFail, 0)
 	for _, item := range items {
+		if item.Action == "update" {
+			existing := existingByName[item.Name]
+			port := item.ServicePort
+			api, err := s.Update(ctx, existing.ID, UpdateAPIInput{
+				AccessPath:      item.AccessPath,
+				AccessMethods:   item.AccessMethods,
+				AccessProtocols: item.AccessProtocols,
+				AccessHosts:     existing.AccessHosts,
+				AccessHeaders:   decodeHeaders(existing.AccessHeaders),
+				ServiceProtocol: item.ServiceProtocol,
+				ServiceHostKind: model.HostKindDirect,
+				ServiceHost:     item.ServiceHost,
+				ServicePort:     &port,
+				ServicePath:     item.ServicePath,
+			})
+			if err != nil {
+				failed = append(failed, ImportOpenAPIFail{
+					Name:  item.Name,
+					Path:  item.AccessPath,
+					Error: err.Error(),
+				})
+				continue
+			}
+			updated = append(updated, *api)
+			continue
+		}
 		api, err := s.Create(groupID, CreateAPIInput{
 			Name:            item.Name,
 			AccessPath:      item.AccessPath,
@@ -136,8 +178,22 @@ func (s *APIService) ImportOpenAPI(groupID uint64, opt ImportOpenAPIOptions) (*I
 		created = append(created, *api)
 	}
 	result.Created = created
+	result.Updated = updated
 	result.Failed = failed
 	return result, nil
+}
+
+func (s *APIService) apisByNameInGroup(groupID uint64) (map[string]model.API, error) {
+	var list []model.API
+	if err := s.db.Select("id", "name", "access_hosts", "access_headers").
+		Where("group_id = ?", groupID).Find(&list).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]model.API, len(list))
+	for _, api := range list {
+		out[api.Name] = api
+	}
+	return out, nil
 }
 
 func parseOpenAPIDocument(opt ImportOpenAPIOptions) ([]ImportOpenAPIItem, error) {

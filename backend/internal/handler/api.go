@@ -71,7 +71,7 @@ func (h *APIHandler) ImportOpenAPI(c *gin.Context) {
 	case "1", "true", "yes":
 		dryRun = true
 	}
-	result, err := h.svc.ImportOpenAPI(groupID, service.ImportOpenAPIOptions{
+	result, err := h.svc.ImportOpenAPI(c.Request.Context(), groupID, service.ImportOpenAPIOptions{
 		Content:         content,
 		Filename:        file.Filename,
 		DryRun:          dryRun,
