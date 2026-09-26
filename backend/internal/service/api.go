@@ -83,6 +83,13 @@ func (s *APIService) Create(groupID uint64, in CreateAPIInput) (*model.API, erro
 	if err != nil {
 		return nil, err
 	}
+	var nameCount int64
+	if err := s.db.Model(&model.API{}).Where("group_id = ? AND name = ?", groupID, in.Name).Count(&nameCount).Error; err != nil {
+		return nil, err
+	}
+	if nameCount > 0 {
+		return nil, fmt.Errorf("%w: API名称已存在", ErrConflict)
+	}
 	strip := true
 	if in.AccessStripPath != nil {
 		strip = *in.AccessStripPath
@@ -175,7 +182,14 @@ func (s *APIService) Update(ctx context.Context, id uint64, in UpdateAPIInput) (
 		return nil, err
 	}
 	updates := map[string]interface{}{}
-	if in.Name != "" {
+	if in.Name != "" && in.Name != api.Name {
+		var nameCount int64
+		if err := s.db.Model(&model.API{}).Where("group_id = ? AND name = ? AND id <> ?", api.GroupID, in.Name, id).Count(&nameCount).Error; err != nil {
+			return nil, err
+		}
+		if nameCount > 0 {
+			return nil, fmt.Errorf("%w: API名称已存在", ErrConflict)
+		}
 		updates["name"] = in.Name
 	}
 	if in.AccessPath != "" {

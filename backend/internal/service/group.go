@@ -33,6 +33,13 @@ func (s *GroupService) Create(spaceID uint64, in CreateGroupInput) (*model.APIGr
 		}
 		return nil, err
 	}
+	var count int64
+	if err := s.db.Model(&model.APIGroup{}).Where("space_id = ? AND name = ?", spaceID, in.Name).Count(&count).Error; err != nil {
+		return nil, err
+	}
+	if count > 0 {
+		return nil, fmt.Errorf("%w: 分组名已存在", ErrConflict)
+	}
 	group := &model.APIGroup{
 		SpaceID:   spaceID,
 		GatewayID: in.GatewayID,
@@ -98,7 +105,14 @@ func (s *GroupService) Update(id uint64, in UpdateGroupInput) (*model.APIGroup, 
 		return nil, err
 	}
 	updates := map[string]interface{}{}
-	if in.Name != "" {
+	if in.Name != "" && in.Name != group.Name {
+		var count int64
+		if err := s.db.Model(&model.APIGroup{}).Where("space_id = ? AND name = ? AND id <> ?", group.SpaceID, in.Name, id).Count(&count).Error; err != nil {
+			return nil, err
+		}
+		if count > 0 {
+			return nil, fmt.Errorf("%w: 分组名已存在", ErrConflict)
+		}
 		updates["name"] = in.Name
 	}
 	if len(updates) > 0 {

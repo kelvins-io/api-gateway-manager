@@ -42,7 +42,7 @@ func (s *SpaceService) Create(ownerID uint64, isSystemAdmin bool, in CreateSpace
 		return nil, err
 	}
 	if exists > 0 {
-		return nil, fmt.Errorf("%w: space name already exists", ErrConflict)
+		return nil, fmt.Errorf("%w: 空间名已存在", ErrConflict)
 	}
 	prefix, err := model.NormalizePrefix(in.Prefix)
 	if err != nil {
@@ -214,7 +214,7 @@ func (s *SpaceService) Update(id uint64, in UpdateSpaceInput) (*model.Space, err
 			return nil, err
 		}
 		if count > 0 {
-			return nil, fmt.Errorf("%w: space name already exists", ErrConflict)
+			return nil, fmt.Errorf("%w: 空间名已存在", ErrConflict)
 		}
 		updates["name"] = in.Name
 	}

@@ -75,9 +75,9 @@ type Gateway struct {
 
 type APIGroup struct {
 	ID        uint64    `gorm:"primaryKey" json:"id"`
-	SpaceID   uint64    `gorm:"not null;index" json:"space_id"`
+	SpaceID   uint64    `gorm:"not null;uniqueIndex:idx_space_group_name" json:"space_id"`
 	GatewayID uint64    `gorm:"not null;index" json:"gateway_id"`
-	Name      string    `gorm:"size:128;not null" json:"name"`
+	Name      string    `gorm:"size:128;not null;uniqueIndex:idx_space_group_name" json:"name"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
@@ -88,8 +88,8 @@ type APIGroup struct {
 
 type API struct {
 	ID                    uint64         `gorm:"primaryKey" json:"id"`
-	GroupID               uint64         `gorm:"not null;index" json:"group_id"`
-	Name                  string         `gorm:"size:128;not null" json:"name"`
+	GroupID               uint64         `gorm:"not null;uniqueIndex:idx_group_api_name" json:"group_id"`
+	Name                  string         `gorm:"size:128;not null;uniqueIndex:idx_group_api_name" json:"name"`
 	AccessPath            string         `gorm:"size:2048;not null" json:"access_path"`
 	AccessMethods         string         `gorm:"size:128;not null" json:"access_methods"`
 	AccessProtocols       string         `gorm:"size:64;not null;default:http" json:"access_protocols"`
