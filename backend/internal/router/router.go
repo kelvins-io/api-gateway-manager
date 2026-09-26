@@ -70,6 +70,7 @@ func Setup(db *gorm.DB, jwtMgr *jwtutil.Manager, log *zap.Logger, h Handlers) *g
 			// groups under space
 			authed.GET("/spaces/:id/groups", middleware.RequireSpaceRole(db, "id"), h.Group.List)
 			authed.POST("/spaces/:id/groups", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Group.Create)
+			authed.GET("/spaces/:id/gateway-options", middleware.RequireSpaceRole(db, "id"), h.Gateway.ListOptionsForSpace)
 			authed.GET("/spaces/:id/upstreams", middleware.RequireSpaceRole(db, "id"), h.Upstream.List)
 			authed.POST("/spaces/:id/upstreams", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Upstream.Create)
 			authed.PUT("/spaces/:id/upstreams/:upid", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Upstream.Update)
@@ -96,8 +97,10 @@ func Setup(db *gorm.DB, jwtMgr *jwtutil.Manager, log *zap.Logger, h Handlers) *g
 				admin.POST("/gateways", h.Gateway.Create)
 				admin.PUT("/gateways/:id", h.Gateway.Update)
 				admin.DELETE("/gateways/:id", h.Gateway.Delete)
+				admin.GET("/gateways/:id/unauthorized-spaces", h.Gateway.ListUnauthorizedSpaces)
+				admin.POST("/gateways/:id/authorize-spaces", h.Gateway.AuthorizeSpaces)
 			}
-			// options for binding api groups (no admin_api exposed)
+			// options for binding api groups (no admin_api exposed); prefers space-scoped route
 			authed.GET("/gateways-options", h.Gateway.ListOptions)
 
 			// group detail / update / delete

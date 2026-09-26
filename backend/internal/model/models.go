@@ -69,8 +69,20 @@ type Gateway struct {
 	AdminAPI    string    `gorm:"size:512;not null" json:"admin_api"`
 	Domain      string    `gorm:"size:255;not null;default:''" json:"domain"`
 	NetworkZone string    `gorm:"size:128;not null" json:"network_zone"`
+	Shared      bool      `gorm:"not null;default:true" json:"shared"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// GatewaySpace grants a private gateway to a space so it can bind API groups.
+type GatewaySpace struct {
+	ID        uint64    `gorm:"primaryKey" json:"id"`
+	GatewayID uint64    `gorm:"not null;uniqueIndex:idx_gateway_space" json:"gateway_id"`
+	SpaceID   uint64    `gorm:"not null;uniqueIndex:idx_gateway_space;index" json:"space_id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	Space *Space `gorm:"foreignKey:SpaceID" json:"space,omitempty"`
 }
 
 type APIGroup struct {

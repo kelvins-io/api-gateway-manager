@@ -26,11 +26,7 @@ type UpdateGroupInput struct {
 }
 
 func (s *GroupService) Create(spaceID uint64, in CreateGroupInput) (*model.APIGroup, error) {
-	var gw model.Gateway
-	if err := s.db.First(&gw, in.GatewayID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("%w: gateway not found", ErrBadRequest)
-		}
+	if err := NewGatewayService(s.db).UsableBySpace(in.GatewayID, spaceID); err != nil {
 		return nil, err
 	}
 	var count int64

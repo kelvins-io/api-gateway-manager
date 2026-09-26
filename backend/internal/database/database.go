@@ -34,6 +34,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.Space{},
 		&model.SpaceMember{},
 		&model.Gateway{},
+		&model.GatewaySpace{},
 		&model.APIGroup{},
 		&model.API{},
 		&model.APIVersion{},

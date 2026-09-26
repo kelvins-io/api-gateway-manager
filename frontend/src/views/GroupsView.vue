@@ -111,7 +111,11 @@ async function load() {
 }
 
 async function loadGateways() {
-  gateways.value = (await gatewayApi.listGatewayOptions()) || []
+  if (!store.currentSpaceId) {
+    gateways.value = []
+    return
+  }
+  gateways.value = (await gatewayApi.listGatewayOptions(store.currentSpaceId)) || []
 }
 
 function openCreate() {
@@ -156,9 +160,10 @@ async function onDelete(row: ApiGroup) {
   await load()
 }
 
-watch(() => store.currentSpaceId, () => {
+watch(() => store.currentSpaceId, async () => {
   resetPage()
-  load()
+  await loadGateways()
+  await load()
 })
 
 onMounted(async () => {

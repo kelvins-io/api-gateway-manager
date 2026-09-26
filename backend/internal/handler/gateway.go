@@ -46,6 +46,49 @@ func (h *GatewayHandler) ListOptions(c *gin.Context) {
 	response.OK(c, list)
 }
 
+func (h *GatewayHandler) ListOptionsForSpace(c *gin.Context) {
+	spaceID, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	list, err := h.svc.ListOptionsForSpace(spaceID)
+	if err != nil {
+		mapError(c, err)
+		return
+	}
+	response.OK(c, list)
+}
+
+func (h *GatewayHandler) ListUnauthorizedSpaces(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	list, err := h.svc.ListUnauthorizedSpaces(id)
+	if err != nil {
+		mapError(c, err)
+		return
+	}
+	response.OK(c, list)
+}
+
+func (h *GatewayHandler) AuthorizeSpaces(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	var in service.AuthorizeSpacesInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := h.svc.AuthorizeSpaces(id, in.SpaceIDs); err != nil {
+		mapError(c, err)
+		return
+	}
+	response.OK(c, nil)
+}
+
 func (h *GatewayHandler) Get(c *gin.Context) {
 	id, ok := parseID(c, "id")
 	if !ok {

@@ -38,6 +38,7 @@ export interface Gateway {
   admin_api: string
   domain: string
   network_zone: string
+  shared?: boolean
 }
 
 export interface ApiGroup {

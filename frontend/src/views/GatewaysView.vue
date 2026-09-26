@@ -25,9 +25,17 @@
         <el-table-column prop="admin_api" label="Admin API" min-width="220" />
         <el-table-column prop="domain" label="Domain" min-width="180" />
         <el-table-column prop="network_zone" label="网络区域" width="140" />
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="是否共享" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.shared !== false ? 'success' : 'info'" size="small">
+              {{ row.shared !== false ? '是' : '否' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button v-if="row.shared === false" link type="primary" @click="openAuthorize(row)">授权</el-button>
             <el-button link type="danger" @click="onDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -52,10 +60,49 @@
               <el-option v-for="z in networkZoneOptions" :key="z" :label="z" :value="z" />
             </el-select>
           </el-form-item>
+          <el-form-item label="是否共享">
+            <el-switch v-model="form.shared" />
+          </el-form-item>
         </el-form>
         <template #footer>
           <el-button @click="visible = false">取消</el-button>
           <el-button type="primary" :loading="saving" @click="save">确定</el-button>
+        </template>
+      </el-dialog>
+
+      <el-dialog v-model="authVisible" :title="authTitle" width="640px">
+        <el-table
+          ref="spaceTableRef"
+          :data="spacePaged"
+          v-loading="authLoading"
+          empty-text="暂无待授权空间"
+          stripe
+          row-key="id"
+          @selection-change="onSpaceSelection"
+        >
+          <el-table-column type="selection" width="48" reserve-selection />
+          <el-table-column prop="name" label="空间名称" min-width="160" />
+          <el-table-column prop="prefix" label="前缀" width="140" />
+          <el-table-column prop="description" label="描述" min-width="180" />
+        </el-table>
+        <div class="dialog-pagination">
+          <el-pagination
+            :current-page="spacePage"
+            :page-size="spacePageSize"
+            :total="spaceList.length"
+            :page-sizes="[5, 10, 20]"
+            layout="total, sizes, prev, pager, next"
+            small
+            background
+            @update:current-page="spacePage = $event"
+            @update:page-size="onSpacePageSize"
+          />
+        </div>
+        <template #footer>
+          <el-button @click="authVisible = false">取消</el-button>
+          <el-button type="primary" :loading="authorizing" :disabled="!selectedSpaces.length" @click="confirmAuthorize">
+            确定授权
+          </el-button>
         </template>
       </el-dialog>
     </template>
@@ -66,7 +113,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { Gateway } from '@/types'
+import type { TableInstance } from 'element-plus'
+import type { Gateway, Space } from '@/types'
 import * as gatewayApi from '@/api/gateway'
 import { useUserStore } from '@/stores/user'
 
@@ -81,7 +129,22 @@ const probing = ref(false)
 const visible = ref(false)
 const editing = ref<Gateway | null>(null)
 const networkZoneOptions = ['内网', 'DMZ'] as const
-const form = reactive({ name: '', admin_api: '', domain: '', network_zone: '' })
+const form = reactive({ name: '', admin_api: '', domain: '', network_zone: '', shared: true })
+
+const authVisible = ref(false)
+const authTitle = ref('授权空间')
+const authorizingGw = ref<Gateway | null>(null)
+const spaceList = ref<Space[]>([])
+const selectedSpaces = ref<Space[]>([])
+const authLoading = ref(false)
+const authorizing = ref(false)
+const spaceTableRef = ref<TableInstance>()
+const spacePage = ref(1)
+const spacePageSize = ref(10)
+const spacePaged = computed(() => {
+  const start = (spacePage.value - 1) * spacePageSize.value
+  return spaceList.value.slice(start, start + spacePageSize.value)
+})
 
 async function load() {
   if (!allowed.value) return
@@ -99,6 +162,7 @@ function openCreate() {
   form.admin_api = 'http://localhost:8001'
   form.domain = ''
   form.network_zone = '内网'
+  form.shared = true
   visible.value = true
 }
 
@@ -108,7 +172,48 @@ function openEdit(row: Gateway) {
   form.admin_api = row.admin_api
   form.domain = row.domain || ''
   form.network_zone = networkZoneOptions.some((z) => z === row.network_zone) ? row.network_zone : ''
+  form.shared = row.shared !== false
   visible.value = true
+}
+
+function onSpaceSelection(rows: Space[]) {
+  selectedSpaces.value = rows
+}
+
+function onSpacePageSize(size: number) {
+  spacePageSize.value = size
+  spacePage.value = 1
+}
+
+async function openAuthorize(row: Gateway) {
+  authorizingGw.value = row
+  authTitle.value = `授权私有网关「${row.name}」`
+  authVisible.value = true
+  spaceList.value = []
+  selectedSpaces.value = []
+  spacePage.value = 1
+  spaceTableRef.value?.clearSelection()
+  authLoading.value = true
+  try {
+    spaceList.value = (await gatewayApi.listUnauthorizedSpaces(row.id)) || []
+  } finally {
+    authLoading.value = false
+  }
+}
+
+async function confirmAuthorize() {
+  if (!authorizingGw.value || !selectedSpaces.value.length) return
+  authorizing.value = true
+  try {
+    await gatewayApi.authorizeGatewaySpaces(
+      authorizingGw.value.id,
+      selectedSpaces.value.map((s) => s.id),
+    )
+    ElMessage.success('授权成功')
+    authVisible.value = false
+  } finally {
+    authorizing.value = false
+  }
 }
 
 async function onProbe() {
@@ -172,6 +277,7 @@ async function save() {
         name: form.name,
         domain: form.domain,
         network_zone: form.network_zone,
+        shared: form.shared,
       })
       ElMessage.success('更新成功')
     } else {
@@ -214,5 +320,10 @@ onMounted(async () => {
   display: flex;
   gap: 8px;
   width: 100%;
+}
+.dialog-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 </style>

@@ -28,12 +28,14 @@ type CreateGatewayInput struct {
 	AdminAPI    string `json:"admin_api" binding:"required,min=8,max=512"`
 	Domain      string `json:"domain" binding:"required,max=255"`
 	NetworkZone string `json:"network_zone" binding:"required,oneof=内网 DMZ"`
+	Shared      *bool  `json:"shared"`
 }
 
 type UpdateGatewayInput struct {
 	Name        string `json:"name" binding:"omitempty,min=2,max=128"`
 	Domain      string `json:"domain" binding:"omitempty,max=255"`
 	NetworkZone string `json:"network_zone" binding:"omitempty,oneof=内网 DMZ"`
+	Shared      *bool  `json:"shared"`
 }
 
 func normalizeGatewayDomain(raw string) (string, error) {
@@ -109,13 +111,18 @@ func (s *GatewayService) Create(in CreateGatewayInput) (*model.Gateway, error) {
 	if err := s.probeAdminAPI(in.AdminAPI); err != nil {
 		return nil, err
 	}
+	shared := true
+	if in.Shared != nil {
+		shared = *in.Shared
+	}
 	gw := &model.Gateway{
 		Name:        in.Name,
 		AdminAPI:    in.AdminAPI,
 		Domain:      domain,
 		NetworkZone: in.NetworkZone,
+		Shared:      shared,
 	}
-	if err := s.db.Create(gw).Error; err != nil {
+	if err := s.db.Select("Name", "AdminAPI", "Domain", "NetworkZone", "Shared").Create(gw).Error; err != nil {
 		return nil, err
 	}
 	return gw, nil
@@ -134,8 +141,25 @@ type GatewayOption struct {
 }
 
 func (s *GatewayService) ListOptions() ([]GatewayOption, error) {
+	return s.listOptions(nil)
+}
+
+func (s *GatewayService) ListOptionsForSpace(spaceID uint64) ([]GatewayOption, error) {
+	return s.listOptions(&spaceID)
+}
+
+func (s *GatewayService) listOptions(spaceID *uint64) ([]GatewayOption, error) {
 	var list []model.Gateway
-	if err := s.db.Select("id", "name", "network_zone").Order("id desc").Find(&list).Error; err != nil {
+	q := s.db.Select("id", "name", "network_zone").Order("id desc")
+	if spaceID == nil {
+		q = q.Where("shared = ?", true)
+	} else {
+		q = q.Where(
+			"shared = ? OR id IN (SELECT gateway_id FROM gateway_spaces WHERE space_id = ?)",
+			true, *spaceID,
+		)
+	}
+	if err := q.Find(&list).Error; err != nil {
 		return nil, err
 	}
 	out := make([]GatewayOption, 0, len(list))
@@ -147,6 +171,98 @@ func (s *GatewayService) ListOptions() ([]GatewayOption, error) {
 		})
 	}
 	return out, nil
+}
+
+func (s *GatewayService) UsableBySpace(gatewayID, spaceID uint64) error {
+	var gw model.Gateway
+	if err := s.db.First(&gw, gatewayID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: gateway not found", ErrBadRequest)
+		}
+		return err
+	}
+	if gw.Shared {
+		return nil
+	}
+	var count int64
+	if err := s.db.Model(&model.GatewaySpace{}).
+		Where("gateway_id = ? AND space_id = ?", gatewayID, spaceID).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return fmt.Errorf("%w: gateway is not authorized for this space", ErrBadRequest)
+	}
+	return nil
+}
+
+func (s *GatewayService) ListUnauthorizedSpaces(gatewayID uint64) ([]model.Space, error) {
+	gw, err := s.Get(gatewayID)
+	if err != nil {
+		return nil, err
+	}
+	if gw.Shared {
+		return nil, fmt.Errorf("%w: shared gateway does not need authorization", ErrBadRequest)
+	}
+	var authorizedIDs []uint64
+	if err := s.db.Model(&model.GatewaySpace{}).Where("gateway_id = ?", gatewayID).Pluck("space_id", &authorizedIDs).Error; err != nil {
+		return nil, err
+	}
+	q := s.db.Where("status = ?", model.SpaceStatusActive).Order("id desc")
+	if len(authorizedIDs) > 0 {
+		q = q.Where("id NOT IN ?", authorizedIDs)
+	}
+	var list []model.Space
+	if err := q.Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+type AuthorizeSpacesInput struct {
+	SpaceIDs []uint64 `json:"space_ids" binding:"required"`
+}
+
+func (s *GatewayService) AuthorizeSpaces(gatewayID uint64, spaceIDs []uint64) error {
+	gw, err := s.Get(gatewayID)
+	if err != nil {
+		return err
+	}
+	if gw.Shared {
+		return fmt.Errorf("%w: shared gateway does not need authorization", ErrBadRequest)
+	}
+	spaceIDs = uniqueIDs(spaceIDs)
+	if len(spaceIDs) == 0 {
+		return fmt.Errorf("%w: space_ids required", ErrBadRequest)
+	}
+	var spaces []model.Space
+	if err := s.db.Where("id IN ? AND status = ?", spaceIDs, model.SpaceStatusActive).Find(&spaces).Error; err != nil {
+		return err
+	}
+	if len(spaces) != len(spaceIDs) {
+		return fmt.Errorf("%w: space not found or inactive", ErrBadRequest)
+	}
+	var existing []uint64
+	if err := s.db.Model(&model.GatewaySpace{}).
+		Where("gateway_id = ? AND space_id IN ?", gatewayID, spaceIDs).
+		Pluck("space_id", &existing).Error; err != nil {
+		return err
+	}
+	have := map[uint64]struct{}{}
+	for _, id := range existing {
+		have[id] = struct{}{}
+	}
+	rows := make([]model.GatewaySpace, 0, len(spaceIDs))
+	for _, id := range spaceIDs {
+		if _, ok := have[id]; ok {
+			continue
+		}
+		rows = append(rows, model.GatewaySpace{GatewayID: gatewayID, SpaceID: id})
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	return s.db.Create(&rows).Error
 }
 
 func (s *GatewayService) Get(id uint64) (*model.Gateway, error) {
@@ -186,6 +302,9 @@ func (s *GatewayService) Update(id uint64, in UpdateGatewayInput) (*model.Gatewa
 	if in.NetworkZone != "" {
 		updates["network_zone"] = in.NetworkZone
 	}
+	if in.Shared != nil {
+		updates["shared"] = *in.Shared
+	}
 	if len(updates) > 0 {
 		if err := s.db.Model(gw).Updates(updates).Error; err != nil {
 			return nil, err
@@ -202,12 +321,17 @@ func (s *GatewayService) Delete(id uint64) error {
 	if count > 0 {
 		return fmt.Errorf("%w: gateway is used by api groups", ErrConflict)
 	}
-	res := s.db.Delete(&model.Gateway{}, id)
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("gateway_id = ?", id).Delete(&model.GatewaySpace{}).Error; err != nil {
+			return err
+		}
+		res := tx.Delete(&model.Gateway{}, id)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
 }
