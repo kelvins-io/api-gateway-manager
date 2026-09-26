@@ -47,7 +47,7 @@ type PublishResult struct {
 	RouteID   string
 }
 
-func (c *Client) Publish(ctx context.Context, apiID uint64, snap model.APIConfigSnapshot, existingServiceID, existingRouteID string) (*PublishResult, error) {
+func (c *Client) Publish(ctx context.Context, apiID, spaceID, groupID uint64, snap model.APIConfigSnapshot, existingServiceID, existingRouteID string) (*PublishResult, error) {
 	serviceName := fmt.Sprintf("agm-api-%d", apiID)
 	host, port, path, protocol, retries, connTimeout, writeTimeout, readTimeout, err := serviceFields(snap)
 	if err != nil {
@@ -86,7 +86,7 @@ func (c *Client) Publish(ctx context.Context, apiID uint64, snap model.APIConfig
 	if len(paths) == 0 {
 		return nil, fmt.Errorf("at least one path is required")
 	}
-	routeName := fmt.Sprintf("agm-route-%d", apiID)
+	routeName := model.KongRouteName(spaceID, groupID, apiID)
 	route := &kong.Route{
 		Name:      kong.String(routeName),
 		Paths:     kong.StringSlice(paths...),

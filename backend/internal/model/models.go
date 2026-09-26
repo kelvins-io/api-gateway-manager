@@ -310,6 +310,10 @@ func KongUpstreamName(spaceID uint64, name string) string {
 	return fmt.Sprintf("agm-s%d-%s", spaceID, name)
 }
 
+func KongRouteName(spaceID, groupID, apiID uint64) string {
+	return fmt.Sprintf("agm-%d-%d-%d", spaceID, groupID, apiID)
+}
+
 func KongConsumerName(spaceID uint64, username string) string {
 	return fmt.Sprintf("agm-s%d-%s", spaceID, username)
 }

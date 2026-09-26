@@ -26,6 +26,9 @@ func AutoMigrate(db *gorm.DB) error {
 	if err := migrateEntityIDsToBigint(db); err != nil {
 		return err
 	}
+	if err := dedupeScopedNames(db); err != nil {
+		return err
+	}
 	if err := db.AutoMigrate(
 		&model.User{},
 		&model.Space{},
@@ -48,6 +51,36 @@ func AutoMigrate(db *gorm.DB) error {
 		return err
 	}
 	return ensureJoinPrimaryKeys(db)
+}
+
+// dedupeScopedNames renames duplicate names so unique indexes can be created.
+// The lowest id keeps the original name; later rows get a "-{id}" suffix.
+func dedupeScopedNames(db *gorm.DB) error {
+	if db.Migrator().HasTable(&model.API{}) {
+		if err := db.Exec(`
+			UPDATE apis a
+			SET name = left(a.name, 128 - length('-' || a.id::text)) || '-' || a.id::text
+			WHERE EXISTS (
+				SELECT 1 FROM apis b
+				WHERE b.group_id = a.group_id AND b.name = a.name AND b.id < a.id
+			)
+		`).Error; err != nil {
+			return fmt.Errorf("dedupe api names: %w", err)
+		}
+	}
+	if db.Migrator().HasTable(&model.APIGroup{}) {
+		if err := db.Exec(`
+			UPDATE api_groups a
+			SET name = left(a.name, 128 - length('-' || a.id::text)) || '-' || a.id::text
+			WHERE EXISTS (
+				SELECT 1 FROM api_groups b
+				WHERE b.space_id = a.space_id AND b.name = a.name AND b.id < a.id
+			)
+		`).Error; err != nil {
+			return fmt.Errorf("dedupe group names: %w", err)
+		}
+	}
+	return nil
 }
 
 func backfillApprovalStatuses(db *gorm.DB) error {

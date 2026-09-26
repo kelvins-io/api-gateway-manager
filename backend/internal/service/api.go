@@ -349,7 +349,7 @@ func (s *APIService) Publish(ctx context.Context, id uint64) (*model.API, error)
 	if err != nil {
 		return nil, err
 	}
-	result, err := client.Publish(ctx, api.ID, snap, api.KongServiceID, api.KongRouteID)
+	result, err := client.Publish(ctx, api.ID, api.Group.SpaceID, api.GroupID, snap, api.KongServiceID, api.KongRouteID)
 	if err != nil {
 		return nil, fmt.Errorf("publish to kong: %w", err)
 	}
@@ -534,7 +534,7 @@ func (s *APIService) SwitchVersion(ctx context.Context, id uint64, version strin
 		}
 	}
 
-	result, err := client.Publish(ctx, api.ID, snap, "", "")
+	result, err := client.Publish(ctx, api.ID, api.Group.SpaceID, api.GroupID, snap, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("publish selected version: %w", err)
 	}
