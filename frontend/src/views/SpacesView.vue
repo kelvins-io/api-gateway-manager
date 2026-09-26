@@ -3,6 +3,14 @@
     <div class="toolbar">
       <el-button type="primary" @click="openCreate">申请空间</el-button>
       <el-button @click="openJoin">加入空间</el-button>
+      <el-input
+        v-model="nameQuery"
+        clearable
+        placeholder="按名称搜索"
+        style="width: 220px"
+        @keyup.enter="applyFilter"
+      />
+      <el-button type="primary" @click="applyFilter">搜索</el-button>
       <el-button @click="load">刷新</el-button>
     </div>
 
@@ -93,7 +101,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Space } from '@/types'
@@ -105,7 +113,13 @@ import { usePagination } from '@/composables/usePagination'
 const store = useUserStore()
 const router = useRouter()
 const list = ref<Space[]>([])
-const { page, pageSize, total, paged, pageSizes } = usePagination(list)
+const nameQuery = ref('')
+const filtered = computed(() => {
+  const name = nameQuery.value.trim().toLowerCase()
+  if (!name) return list.value
+  return list.value.filter((row) => row.name.toLowerCase().includes(name))
+})
+const { page, pageSize, total, paged, pageSizes, resetPage } = usePagination(filtered)
 const available = ref<Space[]>([])
 const loading = ref(false)
 const joinLoading = ref(false)
@@ -114,6 +128,14 @@ const createVisible = ref(false)
 const joinVisible = ref(false)
 const editing = ref<Space | null>(null)
 const form = reactive({ name: '', description: '', prefix: '' })
+
+watch(nameQuery, () => {
+  resetPage()
+})
+
+function applyFilter() {
+  resetPage()
+}
 
 function isUsable(row: Space) {
   return row.status === 'active' && (!row.member_status || row.member_status === 'active')
@@ -236,7 +258,9 @@ onMounted(load)
 .toolbar {
   margin-bottom: 16px;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
 }
 .muted {
   color: #909399;

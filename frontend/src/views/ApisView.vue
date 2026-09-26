@@ -4,6 +4,23 @@
       <el-button @click="$router.push('/groups')">返回分组</el-button>
       <el-button type="primary" @click="openCreate">新建 API</el-button>
       <el-button @click="openImport">导入 OpenAPI</el-button>
+      <el-input
+        v-model="nameQuery"
+        clearable
+        placeholder="按名称搜索"
+        style="width: 180px"
+        @keyup.enter="applyFilter"
+      />
+      <el-select v-model="statusQuery" clearable placeholder="状态" style="width: 120px">
+        <el-option label="草稿" value="draft" />
+        <el-option label="已发布" value="published" />
+        <el-option label="已下线" value="offline" />
+      </el-select>
+      <el-select v-model="sharedQuery" clearable placeholder="分享" style="width: 120px">
+        <el-option label="已分享" value="shared" />
+        <el-option label="未分享" value="unshared" />
+      </el-select>
+      <el-button type="primary" @click="applyFilter">搜索</el-button>
       <el-button @click="load">刷新</el-button>
       <el-button type="success" :disabled="!selected.length" :loading="batchBusy" @click="batchPublish">
         发布
@@ -425,7 +442,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { TableInstance, UploadFile, UploadInstance, UploadRawFile } from 'element-plus'
@@ -441,10 +458,33 @@ const store = useUserStore()
 const gid = Number(route.params.gid)
 const spacePrefix = computed(() => (store.currentSpace?.prefix || '').replace(/\/$/, ''))
 const list = ref<ApiItem[]>([])
-const { page, pageSize, total, paged, pageSizes } = usePagination(list)
+const nameQuery = ref('')
+const statusQuery = ref('')
+const sharedQuery = ref('')
+const filtered = computed(() => {
+  const name = nameQuery.value.trim().toLowerCase()
+  const status = statusQuery.value
+  const shared = sharedQuery.value
+  return list.value.filter((row) => {
+    if (name && !row.name.toLowerCase().includes(name)) return false
+    if (status && row.status !== status) return false
+    if (shared === 'shared' && !row.shared) return false
+    if (shared === 'unshared' && row.shared) return false
+    return true
+  })
+})
+const { page, pageSize, total, paged, pageSizes, resetPage } = usePagination(filtered)
 const tableRef = ref<TableInstance>()
 const selected = ref<ApiItem[]>([])
 const batchBusy = ref(false)
+
+watch([nameQuery, statusQuery, sharedQuery], () => {
+  resetPage()
+})
+
+function applyFilter() {
+  resetPage()
+}
 const versions = ref<ApiVersion[]>([])
 const loading = ref(false)
 const saving = ref(false)
@@ -1266,7 +1306,9 @@ onMounted(async () => {
 .toolbar {
   margin-bottom: 16px;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
 }
 .access-url {
   display: flex;

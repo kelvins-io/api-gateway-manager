@@ -13,6 +13,15 @@
       <el-button :disabled="!store.currentSpaceId" @click="$router.push('/upstreams')">Upstream</el-button>
       <el-button :disabled="!store.currentSpaceId" @click="$router.push('/consumers')">Consumers</el-button>
       <el-button :disabled="!store.currentSpaceId" @click="$router.push('/plugins')">Plugins</el-button>
+      <el-input
+        v-model="nameQuery"
+        clearable
+        placeholder="按分组名搜索"
+        style="width: 220px"
+        :disabled="!store.currentSpaceId"
+        @keyup.enter="applyFilter"
+      />
+      <el-button type="primary" :disabled="!store.currentSpaceId" @click="applyFilter">搜索</el-button>
       <el-button :disabled="!store.currentSpaceId" @click="load">刷新</el-button>
       <span v-if="store.currentSpace" class="hint">
         当前空间：{{ store.currentSpace.name }}
@@ -78,7 +87,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ApiGroup, Gateway } from '@/types'
 import * as apiMod from '@/api/api'
@@ -89,13 +98,27 @@ import { usePagination } from '@/composables/usePagination'
 
 const store = useUserStore()
 const list = ref<ApiGroup[]>([])
-const { page, pageSize, total, paged, pageSizes, resetPage } = usePagination(list)
+const nameQuery = ref('')
+const filtered = computed(() => {
+  const name = nameQuery.value.trim().toLowerCase()
+  if (!name) return list.value
+  return list.value.filter((row) => row.name.toLowerCase().includes(name))
+})
+const { page, pageSize, total, paged, pageSizes, resetPage } = usePagination(filtered)
 const gateways = ref<Pick<Gateway, 'id' | 'name' | 'network_zone'>[]>([])
 const loading = ref(false)
 const saving = ref(false)
 const visible = ref(false)
 const editing = ref<ApiGroup | null>(null)
 const form = reactive({ name: '', gateway_id: undefined as number | undefined })
+
+watch(nameQuery, () => {
+  resetPage()
+})
+
+function applyFilter() {
+  resetPage()
+}
 
 async function load() {
   if (!store.currentSpaceId) {
@@ -161,6 +184,7 @@ async function onDelete(row: ApiGroup) {
 }
 
 watch(() => store.currentSpaceId, async () => {
+  nameQuery.value = ''
   resetPage()
   await loadGateways()
   await load()
@@ -176,6 +200,7 @@ onMounted(async () => {
 .toolbar {
   margin-bottom: 16px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
