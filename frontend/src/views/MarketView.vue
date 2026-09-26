@@ -1,6 +1,23 @@
 <template>
   <div>
     <div class="toolbar">
+      <el-input
+        v-model="nameQuery"
+        clearable
+        placeholder="按 API 名称搜索"
+        style="width: 220px"
+        @keyup.enter="applyFilter"
+      />
+      <el-select
+        v-model="authPlugin"
+        clearable
+        placeholder="认证类型"
+        style="width: 160px"
+      >
+        <el-option label="无认证" value="__none__" />
+        <el-option v-for="p in authPlugins" :key="p" :label="p" :value="p" />
+      </el-select>
+      <el-button type="primary" @click="applyFilter">搜索</el-button>
       <el-button @click="load">刷新</el-button>
     </div>
 
@@ -113,7 +130,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { TableInstance } from 'element-plus'
 import type { ApiItem, ConsumerCredential, ConsumerItem } from '@/types'
@@ -121,9 +138,31 @@ import * as apiMod from '@/api/api'
 import ListPagination from '@/components/ListPagination.vue'
 import { usePagination } from '@/composables/usePagination'
 
+const authPlugins = ['key-auth', 'basic-auth', 'jwt', 'hmac-auth']
+
 const list = ref<ApiItem[]>([])
-const { page, pageSize, total, paged, pageSizes } = usePagination(list)
+const nameQuery = ref('')
+const authPlugin = ref('')
+const filtered = computed(() => {
+  const name = nameQuery.value.trim().toLowerCase()
+  const auth = authPlugin.value
+  return list.value.filter((row) => {
+    if (name && !row.name.toLowerCase().includes(name)) return false
+    if (!auth) return true
+    if (auth === '__none__') return !row.auth_enabled
+    return !!row.auth_enabled && row.auth_plugin === auth
+  })
+})
+const { page, pageSize, total, paged, pageSizes, resetPage } = usePagination(filtered)
 const loading = ref(false)
+
+watch([nameQuery, authPlugin], () => {
+  resetPage()
+})
+
+function applyFilter() {
+  resetPage()
+}
 
 const linkVisible = ref(false)
 const linkTitle = ref('关联 API')
@@ -225,7 +264,9 @@ onMounted(load)
 .toolbar {
   margin-bottom: 16px;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
 }
 .access-url {
   line-height: 28px;
