@@ -52,7 +52,12 @@ func (s *ConsumerService) EnsureSpace(id uint64, spaceID uint64) error {
 
 func (s *ConsumerService) List(spaceID uint64) ([]model.Consumer, error) {
 	var list []model.Consumer
-	err := s.db.Preload("Credentials").Preload("APIs").Where("space_id = ?", spaceID).Order("id desc").Find(&list).Error
+	err := s.db.Preload("Credentials").
+		Preload("APIs.Group.Gateway").
+		Preload("APIs.Group.Space").
+		Where("space_id = ?", spaceID).
+		Order("id desc").
+		Find(&list).Error
 	return list, err
 }
 

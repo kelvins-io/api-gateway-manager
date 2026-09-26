@@ -10,13 +10,17 @@
 
     <el-table :data="paged" v-loading="loading" stripe>
       <el-table-column prop="username" label="用户名" />
-      <el-table-column prop="custom_id" label="Custom ID" />
-      <el-table-column label="关联 API">
+      <el-table-column label="关联 API" width="100">
         <template #default="{ row }">
-          <el-tag v-for="a in row.apis || []" :key="a.id" size="small" style="margin-right: 4px">
-            {{ a.name }}
-          </el-tag>
-          <span v-if="!(row.apis || []).length">-</span>
+          <el-button
+            v-if="(row.apis || []).length"
+            link
+            type="primary"
+            @click="openApis(row)"
+          >
+            {{ (row.apis || []).length }}
+          </el-button>
+          <span v-else>0</span>
         </template>
       </el-table-column>
       <el-table-column label="凭证">
@@ -40,6 +44,57 @@
       :total="total"
       :page-sizes="pageSizes"
     />
+
+    <el-dialog v-model="apiVisible" :title="apiTitle" width="1100px">
+      <el-table :data="apiDialogPaged" empty-text="暂无关联 API" max-height="420" stripe>
+        <el-table-column label="所属空间" min-width="110">
+          <template #default="{ row }">{{ row.group?.space?.name || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="API分组" min-width="110">
+          <template #default="{ row }">{{ row.group?.name || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="接入协议" width="110">
+          <template #default="{ row }">
+            <el-tag
+              v-for="proto in protocolsOf(row)"
+              :key="proto"
+              size="small"
+              style="margin: 2px 4px 2px 0"
+            >
+              {{ proto }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="完整请求路径" min-width="200">
+          <template #default="{ row }">
+            <div v-for="p in splitPaths(row.access_path)" :key="p" class="access-url">
+              {{ fullAccessPath(row, p) }}
+            </div>
+            <span v-if="!splitPaths(row.access_path).length">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="access_methods" label="请求方法" width="110" />
+        <el-table-column label="接入 Hosts" min-width="140">
+          <template #default="{ row }">{{ row.access_hosts || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="接入 Headers" min-width="180">
+          <template #default="{ row }">{{ formatHeaders(row.access_headers) }}</template>
+        </el-table-column>
+      </el-table>
+      <div class="dialog-pagination">
+        <el-pagination
+          :current-page="apiDialogPage"
+          :page-size="apiDialogPageSize"
+          :total="apiDialogList.length"
+          :page-sizes="[5, 10, 20]"
+          layout="total, sizes, prev, pager, next"
+          small
+          background
+          @update:current-page="apiDialogPage = $event"
+          @update:page-size="onApiDialogPageSize"
+        />
+      </div>
+    </el-dialog>
 
     <el-dialog v-model="visible" :title="editing ? '编辑 Consumer' : '新建 Consumer'" width="720px">
       <el-form :model="form" label-width="120px">
@@ -118,6 +173,58 @@ const loading = ref(false)
 const saving = ref(false)
 const visible = ref(false)
 const editing = ref<ConsumerItem | null>(null)
+
+const apiVisible = ref(false)
+const apiTitle = ref('关联 API')
+const apiDialogList = ref<ApiItem[]>([])
+const apiDialogPage = ref(1)
+const apiDialogPageSize = ref(5)
+const apiDialogPaged = computed(() => {
+  const start = (apiDialogPage.value - 1) * apiDialogPageSize.value
+  return apiDialogList.value.slice(start, start + apiDialogPageSize.value)
+})
+
+function openApis(row: ConsumerItem) {
+  apiTitle.value = `${row.username} 关联的 API`
+  apiDialogList.value = row.apis || []
+  apiDialogPage.value = 1
+  apiVisible.value = true
+}
+
+function onApiDialogPageSize(size: number) {
+  apiDialogPageSize.value = size
+  apiDialogPage.value = 1
+}
+
+function protocolsOf(row: ApiItem): string[] {
+  const items = (row.access_protocols || 'http')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return items.length ? items : ['http']
+}
+
+function splitPaths(raw: string): string[] {
+  return (raw || '')
+    .split(/[,;\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function fullAccessPath(row: ApiItem, path: string): string {
+  let p = path.startsWith('/') ? path : `/${path}`
+  const prefix = (row.group?.space?.prefix || '').replace(/\/$/, '')
+  if (prefix && p !== prefix && !p.startsWith(`${prefix}/`)) {
+    p = `${prefix}${p}`
+  }
+  return `${row.group?.gateway?.domain || ''}${p}`
+}
+
+function formatHeaders(headers?: Record<string, string[]>) {
+  const entries = Object.entries(headers || {}).filter(([name]) => name)
+  if (!entries.length) return '-'
+  return entries.map(([name, values]) => `${name}: ${(values || []).join(',')}`).join('；')
+}
 
 function emptyConfig() {
   return { key: '', username: '', password: '', secret: '', algorithm: 'HS256', rsa_public_key: '', group: '' }
@@ -249,5 +356,14 @@ onMounted(load)
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.access-url {
+  line-height: 24px;
+  word-break: break-all;
+}
+.dialog-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 </style>

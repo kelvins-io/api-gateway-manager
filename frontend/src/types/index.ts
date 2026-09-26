@@ -111,7 +111,7 @@ export interface ConsumerItem {
   custom_id: string
   created_at?: string
   credentials?: ConsumerCredential[]
-  apis?: { id: number; name: string }[]
+  apis?: ApiItem[]
   space?: { id: number; name: string }
 }
 
