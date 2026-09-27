@@ -386,6 +386,7 @@ type ConsumerGateway struct {
 }
 
 // SplitPaths returns normalized path list from a comma/newline separated string.
+// A leading '~' (Kong regex marker) is preserved at the front of each path.
 func SplitPaths(raw string) []string {
 	parts := strings.FieldsFunc(raw, func(r rune) bool {
 		return r == ',' || r == '\n' || r == ';'
@@ -397,13 +398,46 @@ func SplitPaths(raw string) []string {
 		if p == "" {
 			continue
 		}
-		if !strings.HasPrefix(p, "/") {
-			p = "/" + p
-		}
+		p = normalizePathWithTilde(p)
 		if _, ok := seen[p]; ok {
 			continue
 		}
 		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
+}
+
+// normalizePathWithTilde strips a leading '~', ensures the path starts with '/',
+// then puts '~' back at the front when present. Also tolerates "/~..." from clients
+// that force a leading slash before '~'.
+func normalizePathWithTilde(p string) string {
+	tilde := false
+	switch {
+	case strings.HasPrefix(p, "~"):
+		tilde = true
+		p = strings.TrimPrefix(p, "~")
+	case strings.HasPrefix(p, "/~"):
+		tilde = true
+		p = strings.TrimPrefix(p, "/~")
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	if tilde {
+		return "~" + p
+	}
+	return p
+}
+
+// KongRoutePaths prepares access paths for Kong Route.Paths.
+// Paths that contain '*' are treated as regex and get a '~' prefix.
+func KongRoutePaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if strings.Contains(p, "*") && !strings.HasPrefix(p, "~") {
+			p = "~" + p
+		}
 		out = append(out, p)
 	}
 	return out
@@ -428,16 +462,26 @@ func NormalizePrefix(raw string) (string, error) {
 }
 
 // ApplyPathPrefix prepends prefix to each path. Paths that already start with the prefix are kept.
+// If a path starts with '~', the marker is moved to the front of the full (prefixed) path.
 func ApplyPathPrefix(prefix string, paths []string) []string {
 	prefix = strings.TrimRight(strings.TrimSpace(prefix), "/")
-	if prefix == "" || prefix == "/" {
-		return paths
-	}
 	out := make([]string, 0, len(paths))
 	seen := map[string]struct{}{}
 	for _, p := range paths {
-		if p != prefix && !strings.HasPrefix(p, prefix+"/") {
-			p = prefix + p
+		tilde := strings.HasPrefix(p, "~")
+		if tilde {
+			p = strings.TrimPrefix(p, "~")
+		}
+		if !strings.HasPrefix(p, "/") {
+			p = "/" + p
+		}
+		if prefix != "" && prefix != "/" {
+			if p != prefix && !strings.HasPrefix(p, prefix+"/") {
+				p = prefix + p
+			}
+		}
+		if tilde {
+			p = "~" + p
 		}
 		if _, ok := seen[p]; ok {
 			continue

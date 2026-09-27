@@ -82,7 +82,7 @@ func (c *Client) Publish(ctx context.Context, apiID, spaceID, groupID uint64, sn
 	}
 
 	methods := splitMethods(firstNonEmpty(snap.AccessMethods, snap.LegacyMethods))
-	paths := model.SplitPaths(firstNonEmpty(snap.AccessPath, snap.LegacyPath))
+	paths := model.KongRoutePaths(model.SplitPaths(firstNonEmpty(snap.AccessPath, snap.LegacyPath)))
 	if len(paths) == 0 {
 		return nil, fmt.Errorf("at least one path is required")
 	}

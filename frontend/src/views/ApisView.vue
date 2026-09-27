@@ -593,13 +593,33 @@ const previewPaths = computed(() =>
 function normalizePath(raw: string) {
   const t = raw.trim()
   if (!t) return ''
-  return t.startsWith('/') ? t : `/${t}`
+  let tilde = false
+  let p = t
+  if (p.startsWith('~')) {
+    tilde = true
+    p = p.slice(1)
+  } else if (p.startsWith('/~')) {
+    tilde = true
+    p = p.slice(2)
+  }
+  if (!p.startsWith('/')) p = `/${p}`
+  return tilde ? `~${p}` : p
 }
 
 function applyPrefix(path: string) {
   const prefix = spacePrefix.value
-  if (!prefix || path === prefix || path.startsWith(`${prefix}/`)) return path
-  return `${prefix}${path}`
+  let tilde = false
+  let p = path
+  if (p.startsWith('~')) {
+    tilde = true
+    p = p.slice(1)
+  }
+  if (!p.startsWith('/')) p = `/${p}`
+  if (!prefix || p === prefix || p.startsWith(`${prefix}/`)) {
+    return tilde ? `~${p}` : p
+  }
+  p = `${prefix}${p}`
+  return tilde ? `~${p}` : p
 }
 
 function hasConsumers(row: ApiItem) {
@@ -703,22 +723,22 @@ function spacePrefixOf(row: ApiItem): string {
   return (row.group?.space?.prefix || '').replace(/\/$/, '')
 }
 
-function fullAccessPath(row: ApiItem, path: string): string {
-  let p = path.startsWith('/') ? path : `/${path}`
-  const prefix = spacePrefixOf(row)
-  if (prefix && p !== prefix && !p.startsWith(`${prefix}/`)) {
-    p = `${prefix}${p}`
-  }
-  return `${gatewayDomain(row)}${p}`
-}
-
-function accessPathOnly(row: ApiItem, path: string): string {
-  let p = path.startsWith('/') ? path : `/${path}`
-  const prefix = spacePrefixOf(row)
+function joinSpacePrefix(path: string, prefix: string): string {
+  let p = path.trim()
+  if (p.startsWith('~')) p = p.slice(1)
+  if (!p.startsWith('/')) p = `/${p}`
   if (prefix && p !== prefix && !p.startsWith(`${prefix}/`)) {
     p = `${prefix}${p}`
   }
   return p
+}
+
+function fullAccessPath(row: ApiItem, path: string): string {
+  return `${gatewayDomain(row)}${joinSpacePrefix(path, spacePrefixOf(row))}`
+}
+
+function accessPathOnly(row: ApiItem, path: string): string {
+  return joinSpacePrefix(path, spacePrefixOf(row))
 }
 
 function shellQuote(value: string): string {

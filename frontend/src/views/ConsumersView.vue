@@ -236,7 +236,9 @@ function splitPaths(raw: string): string[] {
 }
 
 function fullAccessPath(row: ApiItem, path: string): string {
-  let p = path.startsWith('/') ? path : `/${path}`
+  let p = path.trim()
+  if (p.startsWith('~')) p = p.slice(1)
+  if (!p.startsWith('/')) p = `/${p}`
   const prefix = (row.group?.space?.prefix || '').replace(/\/$/, '')
   if (prefix && p !== prefix && !p.startsWith(`${prefix}/`)) {
     p = `${prefix}${p}`
