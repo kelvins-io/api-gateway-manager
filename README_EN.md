@@ -1,6 +1,6 @@
 # API Gateway Manager
 
-A Kong-based API gateway management system covering spaces and membership approval, gateways, API groups, upstreams, consumers, plugins, API publish/version switching, and an API market for sharing.
+A Kong-based API gateway management system covering spaces and membership approval, shared/private gateway authorization, API groups, upstreams, consumers, plugins, API publish/version switching, OpenAPI import and batch operations, plus an API market for sharing and cross-space consumer linking.
 
 [中文](README.md)
 
@@ -93,7 +93,9 @@ Open `http://localhost:5373`. The Vite dev server proxies `/api` to `http://loca
 - The applicant becomes `space_admin` of that space; once active, **all system admins** are auto-added as `space_admin`
 - **Join requests**: non-admin joins as `pending` until a space admin approves; system admins join as active `space_admin` immediately
 - Role hierarchy: `system_admin` > `space_admin` > `member`
+- Name uniqueness: space names are globally unique; group names unique within a space; API names unique within a group; upstream / consumer / plugin names unique within a space
 - Lists (spaces, groups, APIs, upstreams, consumers, plugins, API market) default to 10 items per page (20 / 50 / 100 available)
+- Lists support name (and related) search filters (APIs also by status/share; market also by auth type)
 
 ## Features
 
@@ -105,32 +107,39 @@ Open `http://localhost:5373`. The Vite dev server proxies `/api` to `http://loca
 - Users may belong to multiple spaces; space admins approve / reject join requests
 - Space admins can add members from candidate users and change space roles (`space_admin` / `member`)
 - The space owner cannot be removed
+- List supports search by space name
 
 ### Gateways (system admin only)
 
-- Fields: name, Admin API, Domain (`IP:port` or `hostname:port`), network zone
+- Fields: name, Admin API, Domain (`IP:port` or `hostname:port`), network zone, shared flag
 - Admin API reachability is probed on create; Admin API is immutable afterward
+- **Shared gateways** (default): available to all spaces when creating API groups
+- **Private gateways**: only authorized spaces can select them; system admins can authorize active spaces to a private gateway in batch
 - Group binding exposes only gateway name and network zone (not Admin API)
 - API list and API market show full access URLs using Domain + space prefix
 
 ### API Groups
 
 - Belong to a space
-- Must bind a gateway at creation; gateway binding is immutable
+- Must bind a gateway at creation (shared gateways plus private gateways authorized for that space); gateway binding is immutable
 - A group with APIs cannot be deleted
+- List supports search by group name
 
 ### Upstreams
 
 - Space-scoped; load balancing (round-robin, least-connections, consistent-hashing, latency), target weights, and health checks
 - Names are unique within a space; Kong names are prefixed by space to avoid collisions across spaces on the same gateway
 - An API backend host can be a direct address or an upstream
+- List supports search by name
 
 ### Consumers
 
 - Space-scoped; username, Custom ID, and credentials (key-auth, basic-auth, jwt, hmac-auth, acl)
-- Can be linked to APIs that enable matching auth plugins
+- Can be linked to APIs that enable matching auth plugins (including market APIs linked across spaces)
+- List shows associated API count; click to open a paged detail dialog (API name, space/group, protocols, full path, methods, auth, status, version, etc.)
 - Synced to gateways bound by the space’s groups on save; manual “sync to gateway” is also available; re-synced when groups change
 - Kong usernames are prefixed by space
+- List supports search by name
 
 ### Plugins
 
@@ -146,23 +155,31 @@ Open `http://localhost:5373`. The Vite dev server proxies `/api` to `http://loca
 - APIs can attach multiple plugins; bindings sync to the Kong Service on publish / update
 - Updating or deleting a plugin refreshes still-published linked APIs
 - View APIs linked to a plugin; version details show the plugin snapshot for that version
+- List supports search by name
 
 ### APIs
 
-- Access: protocols, paths, methods, hosts, headers, strip path
+- Access: protocols, paths, methods, hosts, headers, strip path, request/response buffering
+- Access paths support Kong regex: a leading `~`, or paths containing `*` get `~` prefixed when published; after space-prefix join, `~` stays at the front
 - Upstream service: protocol, direct host or upstream, port, path, retries, timeouts
 - Auth: key-auth, basic-auth, jwt, hmac-auth, acl, with space plugins and consumers
-- **Publish**: create/update Kong Service + Route via go-kong and record versions (`v1`, `v2`, …)
+- **OpenAPI import**: OpenAPI 3 / Swagger 2 JSON or YAML (max 8MB); optional backend protocol/host/port/path overrides; preview before import; access paths get the space prefix; same-named APIs in the group are updated instead of created
+- **Publish**: create/update Kong Service + Route via go-kong (route name `agm-{space}-{group}-{api}`) and record versions (`v1`, `v2`, …)
 - **Offline**: remove Kong Service/Route; APIs linked to consumers cannot go offline; market share is cleared on offline
 - **Delete**: published APIs or APIs linked to consumers cannot be deleted
 - **Switch version**: offline current config and republish from the selected snapshot
 - **Share / unshare**: only published APIs can be shared to the API market
+- **Batch operations**: multi-select to publish, offline, or delete (ineligible items are skipped)
+- **Copy as curl**: build a curl command from gateway Domain, access path, and auth, then copy to clipboard
+- List supports search by name, status, and share flag
 
 ### API Market
 
 - Lists all shared published APIs
 - Shows space, access protocols, full access URL, methods, auth type, and current version
 - Visible to all logged-in users; share/unshare is managed by space admins in API Management
+- Space admins can link their space’s consumers to market APIs that have auth enabled (cross-space consumption); APIs without auth cannot be linked
+- List supports search by API name and auth type
 
 ## Configuration
 
