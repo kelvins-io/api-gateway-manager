@@ -18,6 +18,7 @@ backend/vendor/
 # env
 .env
 .env.*
+!.env.example
 
 # IDE
 .idea/

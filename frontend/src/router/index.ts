@@ -2,7 +2,8 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 
 const router = createRouter({
-  history: createWebHistory(),
+  // BASE_URL 来自 Vite base（VITE_BASE_PATH）。fullPath 不含该前缀，登录回跳仍是 /groups/1/apis 这类应用内路径。
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/login',
