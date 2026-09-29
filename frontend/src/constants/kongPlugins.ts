@@ -20,10 +20,12 @@ export const pluginCategories: PluginCategory[] = [
     plugins: [
       'acl',
       'proxy-cache',
+      'proxy-cache-advanced',
       'rate-limiting',
       'request-size-limiting',
       'request-termination',
       'response-ratelimiting',
+      'response-ratelimiting-advanced',
     ],
   },
   {
@@ -39,8 +41,12 @@ export const pluginCategories: PluginCategory[] = [
     plugins: [
       'correlation-id',
       'grpc-gateway',
+      'grpc-gateway-advanced',
       'grpc-web',
+      'grpc-web-advanced',
+      'request-gzip',
       'request-transformer',
+      'response-gzip',
       'response-transformer',
     ],
   },
