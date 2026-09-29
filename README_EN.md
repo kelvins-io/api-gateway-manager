@@ -112,7 +112,7 @@ Open `http://localhost:5373`. The Vite dev server proxies `/api` to `http://loca
 ### Gateways (system admin only)
 
 - Fields: name, Admin API, Domain (`IP:port` or `hostname:port`), network zone, shared flag
-- Admin API reachability is probed on create; Admin API is immutable afterward
+- Admin API reachability is probed on create and update; unreachable addresses are rejected
 - **Shared gateways** (default): available to all spaces when creating API groups
 - **Private gateways**: only authorized spaces can select them; system admins can authorize active spaces to a private gateway in batch
 - Group binding exposes only gateway name and network zone (not Admin API)

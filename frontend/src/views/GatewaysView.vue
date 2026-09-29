@@ -9,7 +9,7 @@
     </template>
     <template v-else>
       <el-alert
-        title="添加网关时会自动探测 Admin API（Kong /status）是否可用；不可达将拒绝保存。Admin API 创建后不可修改。"
+        title="创建或修改 Admin API 时会自动探测（Kong /status）是否可用；不可达将拒绝保存。"
         type="info"
         show-icon
         :closable="false"
@@ -48,7 +48,7 @@
           </el-form-item>
           <el-form-item label="Admin API" required>
             <div class="admin-api-row">
-              <el-input v-model="form.admin_api" placeholder="http://localhost:8001" :disabled="!!editing" />
+              <el-input v-model="form.admin_api" placeholder="http://localhost:8001" />
               <el-button :loading="probing" @click="onProbe">探测</el-button>
             </div>
           </el-form-item>
@@ -275,6 +275,7 @@ async function save() {
     if (editing.value) {
       await gatewayApi.updateGateway(editing.value.id, {
         name: form.name,
+        admin_api: form.admin_api,
         domain: form.domain,
         network_zone: form.network_zone,
         shared: form.shared,

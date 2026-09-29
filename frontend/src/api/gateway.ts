@@ -42,7 +42,7 @@ export function createGateway(data: {
 
 export function updateGateway(
   id: number,
-  data: { name?: string; domain?: string; network_zone?: string; shared?: boolean },
+  data: { name?: string; admin_api?: string; domain?: string; network_zone?: string; shared?: boolean },
 ) {
   return request<Gateway>(() => http.put(`/gateways/${id}`, data))
 }

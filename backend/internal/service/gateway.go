@@ -33,6 +33,7 @@ type CreateGatewayInput struct {
 
 type UpdateGatewayInput struct {
 	Name        string `json:"name" binding:"omitempty,min=2,max=128"`
+	AdminAPI    string `json:"admin_api" binding:"omitempty,min=8,max=512"`
 	Domain      string `json:"domain" binding:"omitempty,max=255"`
 	NetworkZone string `json:"network_zone" binding:"omitempty,oneof=内网 DMZ"`
 	Shared      *bool  `json:"shared"`
@@ -291,6 +292,12 @@ func (s *GatewayService) Update(id uint64, in UpdateGatewayInput) (*model.Gatewa
 			return nil, fmt.Errorf("%w: gateway name already exists", ErrConflict)
 		}
 		updates["name"] = in.Name
+	}
+	if in.AdminAPI != "" && in.AdminAPI != gw.AdminAPI {
+		if err := s.probeAdminAPI(in.AdminAPI); err != nil {
+			return nil, err
+		}
+		updates["admin_api"] = in.AdminAPI
 	}
 	if in.Domain != "" {
 		domain, err := normalizeGatewayDomain(in.Domain)
