@@ -23,6 +23,7 @@ type Handlers struct {
 	Upstream *handler.UpstreamHandler
 	Consumer *handler.ConsumerHandler
 	Plugin   *handler.PluginHandler
+	Debug    *handler.DebugHandler
 	APISvc   *service.APIService
 	GroupSvc *service.GroupService
 }
@@ -126,6 +127,9 @@ func Setup(db *gorm.DB, jwtMgr *jwtutil.Manager, log *zap.Logger, h Handlers) *g
 			authed.POST("/apis/:aid/unshare", requireAPIAccess(db, h.APISvc, true), h.API.Unshare)
 			authed.POST("/apis/:aid/switch-version", requireAPIAccess(db, h.APISvc, true), h.API.SwitchVersion)
 			authed.GET("/apis/:aid/versions", requireAPIAccess(db, h.APISvc, false), h.API.ListVersions)
+
+			// REST debug proxy (browser CORS bypass)
+			authed.POST("/debug/proxy", h.Debug.Proxy)
 		}
 	}
 

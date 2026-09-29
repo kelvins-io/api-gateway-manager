@@ -54,8 +54,16 @@
         </template>
       </el-table-column>
       <el-table-column prop="current_version" label="当前发布版本" width="120" />
-      <el-table-column label="操作" width="120" fixed="right">
+      <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
+          <el-button
+            v-if="!row.auth_enabled"
+            link
+            type="primary"
+            @click="openDebug(row)"
+          >
+            调试
+          </el-button>
           <el-tooltip
             :disabled="!!row.auth_enabled"
             content="未启用认证的 API 无法关联 Consumer"
@@ -126,6 +134,8 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <ApiDebugger v-model="debugVisible" :api="debugApi" />
   </div>
 </template>
 
@@ -136,6 +146,7 @@ import type { TableInstance } from 'element-plus'
 import type { ApiItem, ConsumerCredential, ConsumerItem } from '@/types'
 import * as apiMod from '@/api/api'
 import ListPagination from '@/components/ListPagination.vue'
+import ApiDebugger from '@/components/ApiDebugger.vue'
 import { usePagination } from '@/composables/usePagination'
 
 const authPlugins = ['key-auth', 'basic-auth', 'jwt', 'hmac-auth']
@@ -174,6 +185,8 @@ const selectedConsumers = ref<ConsumerItem[]>([])
 const consumerTableRef = ref<TableInstance>()
 const consumerPage = ref(1)
 const consumerPageSize = ref(10)
+const debugVisible = ref(false)
+const debugApi = ref<ApiItem | null>(null)
 const consumerPaged = computed(() => {
   const start = (consumerPage.value - 1) * consumerPageSize.value
   return consumerList.value.slice(start, start + consumerPageSize.value)
@@ -233,6 +246,12 @@ async function openLink(row: ApiItem) {
   } finally {
     consumerLoading.value = false
   }
+}
+
+function openDebug(row: ApiItem) {
+  if (row.auth_enabled) return
+  debugApi.value = row
+  debugVisible.value = true
 }
 
 async function confirmLink() {

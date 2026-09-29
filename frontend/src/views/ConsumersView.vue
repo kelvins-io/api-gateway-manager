@@ -90,6 +90,11 @@
         <el-table-column label="接入 Headers" min-width="180">
           <template #default="{ row }">{{ formatHeaders(row.access_headers) }}</template>
         </el-table-column>
+        <el-table-column label="操作" width="80" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openDebug(row)">调试</el-button>
+          </template>
+        </el-table-column>
       </el-table>
       <div class="dialog-pagination">
         <el-pagination
@@ -105,6 +110,8 @@
         />
       </div>
     </el-dialog>
+
+    <ApiDebugger v-model="debugVisible" :api="debugApi" :consumer="debugConsumer" />
 
     <el-dialog v-model="visible" :title="editing ? '编辑 Consumer' : '新建 Consumer'" width="720px">
       <el-form :model="form" label-width="120px">
@@ -170,6 +177,7 @@ import type { ApiItem, ConsumerCredential, ConsumerItem } from '@/types'
 import * as apiMod from '@/api/api'
 import { useUserStore } from '@/stores/user'
 import ListPagination from '@/components/ListPagination.vue'
+import ApiDebugger from '@/components/ApiDebugger.vue'
 import { usePagination } from '@/composables/usePagination'
 
 const plugins = ['key-auth', 'basic-auth', 'jwt', 'hmac-auth', 'acl']
@@ -203,16 +211,27 @@ const apiTitle = ref('关联 API')
 const apiDialogList = ref<ApiItem[]>([])
 const apiDialogPage = ref(1)
 const apiDialogPageSize = ref(5)
+const debugVisible = ref(false)
+const debugApi = ref<ApiItem | null>(null)
+const debugConsumer = ref<ConsumerItem | null>(null)
+const currentConsumer = ref<ConsumerItem | null>(null)
 const apiDialogPaged = computed(() => {
   const start = (apiDialogPage.value - 1) * apiDialogPageSize.value
   return apiDialogList.value.slice(start, start + apiDialogPageSize.value)
 })
 
 function openApis(row: ConsumerItem) {
+  currentConsumer.value = row
   apiTitle.value = `${row.username} 关联的 API`
   apiDialogList.value = row.apis || []
   apiDialogPage.value = 1
   apiVisible.value = true
+}
+
+function openDebug(row: ApiItem) {
+  debugApi.value = row
+  debugConsumer.value = currentConsumer.value
+  debugVisible.value = true
 }
 
 function onApiDialogPageSize(size: number) {

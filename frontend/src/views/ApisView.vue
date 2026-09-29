@@ -88,8 +88,9 @@
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="680" fixed="right">
+      <el-table-column label="操作" width="720" fixed="right">
         <template #default="{ row }">
+          <el-button link type="primary" @click="openDebug(row)">调试</el-button>
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button link type="success" @click="onPublish(row)">发布</el-button>
           <el-tooltip :disabled="canOffline(row)" :content="offlineHint(row)" placement="top">
@@ -364,6 +365,8 @@
       <el-empty v-else description="无法解析该版本配置" />
     </el-dialog>
 
+    <ApiDebugger v-model="debugVisible" :api="debugApi" />
+
     <el-dialog
       v-model="importVisible"
       title="导入 OpenAPI"
@@ -459,6 +462,7 @@ import * as apiMod from '@/api/api'
 import type { ImportOpenAPIItem } from '@/api/api'
 import { useUserStore } from '@/stores/user'
 import ListPagination from '@/components/ListPagination.vue'
+import ApiDebugger from '@/components/ApiDebugger.vue'
 import { usePagination } from '@/composables/usePagination'
 
 const route = useRoute()
@@ -509,6 +513,8 @@ const detailVisible = ref(false)
 const editing = ref<ApiItem | null>(null)
 const currentApi = ref<ApiItem | null>(null)
 const detailVersion = ref<ApiVersion | null>(null)
+const debugVisible = ref(false)
+const debugApi = ref<ApiItem | null>(null)
 const authPlugins = ['key-auth', 'basic-auth', 'jwt', 'hmac-auth']
 const methodOptions = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']
 const protocolOptions = ['http', 'https', 'grpc', 'grpcs']
@@ -1019,6 +1025,11 @@ function openConsumers(row: ApiItem) {
   consumerTitle.value = `${row.name} 的 Consumers`
   consumerRows.value = row.consumers || []
   consumerVisible.value = true
+}
+
+function openDebug(row: ApiItem) {
+  debugApi.value = row
+  debugVisible.value = true
 }
 
 function pluginSummary(row: PluginItem) {
