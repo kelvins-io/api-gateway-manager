@@ -56,70 +56,70 @@ services:
     networks:
       - agm
 
-#  kong-db:
-#    image: postgres:16-alpine
-#    container_name: agm-kong-db
-#    environment:
-#      POSTGRES_USER: kong
-#      POSTGRES_PASSWORD: kong
-#      POSTGRES_DB: kong
-#    volumes:
-#      - kong_db_data:/var/lib/postgresql/data
-#    healthcheck:
-#      test: ["CMD-SHELL", "pg_isready -U kong -d kong"]
-#      interval: 5s
-#      timeout: 5s
-#      retries: 10
-#    networks:
-#      - agm
-#
-#  kong-migration:
-#    image: kong:3.7
-#    container_name: agm-kong-migration
-#    depends_on:
-#      kong-db:
-#        condition: service_healthy
-#    environment:
-#      KONG_DATABASE: postgres
-#      KONG_PG_HOST: kong-db
-#      KONG_PG_USER: kong
-#      KONG_PG_PASSWORD: kong
-#      KONG_PG_DATABASE: kong
-#    command: kong migrations bootstrap
-#    restart: on-failure
-#    networks:
-#      - agm
-#
-#  kong:
-#    image: kong:3.7
-#    container_name: agm-kong
-#    depends_on:
-#      kong-db:
-#        condition: service_healthy
-#      kong-migration:
-#        condition: service_completed_successfully
-#    environment:
-#      KONG_DATABASE: postgres
-#      KONG_PG_HOST: kong-db
-#      KONG_PG_USER: kong
-#      KONG_PG_PASSWORD: kong
-#      KONG_PG_DATABASE: kong
-#      KONG_PROXY_ACCESS_LOG: /dev/stdout
-#      KONG_ADMIN_ACCESS_LOG: /dev/stdout
-#      KONG_PROXY_ERROR_LOG: /dev/stderr
-#      KONG_ADMIN_ERROR_LOG: /dev/stderr
-#      KONG_ADMIN_LISTEN: 0.0.0.0:8001
-#      KONG_PROXY_LISTEN: 0.0.0.0:8000
-#    ports:
-#      - "18000:8000"
-#      - "18001:8001"
-#    healthcheck:
-#      test: ["CMD", "kong", "health"]
-#      interval: 10s
-#      timeout: 10s
-#      retries: 10
-#    networks:
-#      - agm
+  kong-db:
+    image: postgres:13
+    container_name: kong-db
+    environment:
+      POSTGRES_USER: kong
+      POSTGRES_PASSWORD: kong
+      POSTGRES_DB: kong
+    volumes:
+      - kong_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kong -d kong"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - agm
+
+  kong-migration:
+    image: kong:3.4.2
+    container_name: agm-kong-migration
+    depends_on:
+      kong-db:
+        condition: service_healthy
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-db
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong
+      KONG_PG_DATABASE: kong
+    command: kong migrations bootstrap
+    restart: on-failure
+    networks:
+      - agm
+
+  kong:
+    image: kong:3.4.2
+    container_name: agm-kong
+    depends_on:
+      kong-db:
+        condition: service_healthy
+      kong-migration:
+        condition: service_completed_successfully
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-db
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong
+      KONG_PG_DATABASE: kong
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+    ports:
+      - "13000:8000"
+      - "13001:8001"
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks:
+      - agm
 
 networks:
   agm:
@@ -127,4 +127,4 @@ networks:
 
 volumes:
   agm_postgres_data:
-#  kong_db_data:
+  kong_db_data:
