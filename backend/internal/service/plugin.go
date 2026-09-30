@@ -94,8 +94,43 @@ func (s *PluginService) EnsureSpace(id uint64, spaceID uint64) error {
 
 func (s *PluginService) List(spaceID uint64) ([]model.Plugin, error) {
 	var list []model.Plugin
-	err := s.db.Where("space_id = ?", spaceID).Order("id desc").Find(&list).Error
-	return list, err
+	if err := s.db.Where("space_id = ?", spaceID).Order("id desc").Find(&list).Error; err != nil {
+		return nil, err
+	}
+	if err := fillPluginAPICounts(s.db, list); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+func fillPluginAPICounts(db *gorm.DB, list []model.Plugin) error {
+	if len(list) == 0 {
+		return nil
+	}
+	ids := make([]uint64, len(list))
+	for i, item := range list {
+		ids[i] = item.ID
+	}
+	type row struct {
+		PluginID uint64
+		Cnt      int64
+	}
+	var rows []row
+	if err := db.Table("api_plugins").
+		Select("plugin_id, count(*) as cnt").
+		Where("plugin_id IN ?", ids).
+		Group("plugin_id").
+		Scan(&rows).Error; err != nil {
+		return err
+	}
+	counts := make(map[uint64]int64, len(rows))
+	for _, r := range rows {
+		counts[r.PluginID] = r.Cnt
+	}
+	for i := range list {
+		list[i].APICount = counts[list[i].ID]
+	}
+	return nil
 }
 
 func (s *PluginService) ListAPIs(id uint64, spaceID uint64) ([]model.API, error) {
@@ -158,37 +193,18 @@ func (s *PluginService) Update(ctx context.Context, id uint64, in UpsertPluginIn
 	return saved, nil
 }
 
-func (s *PluginService) Delete(ctx context.Context, id uint64) error {
+func (s *PluginService) Delete(_ context.Context, id uint64) error {
 	if _, err := s.get(id); err != nil {
 		return err
 	}
-	var apis []model.API
-	if err := s.db.Joins("JOIN api_plugins ON api_plugins.api_id = apis.id").
-		Where("api_plugins.plugin_id = ? AND apis.status = ?", id, model.APIStatusPublished).
-		Preload("Group.Gateway").Preload("Plugins").Preload("Consumers.Credentials").Find(&apis).Error; err != nil {
+	var linked int64
+	if err := s.db.Table("api_plugins").Where("plugin_id = ?", id).Count(&linked).Error; err != nil {
 		return err
 	}
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("DELETE FROM api_plugins WHERE plugin_id = ?", id).Error; err != nil {
-			return err
-		}
-		return tx.Delete(&model.Plugin{}, id).Error
-	}); err != nil {
-		return err
+	if linked > 0 {
+		return fmt.Errorf("%w: 已关联 API 的 Plugin 不允许删除", ErrConflict)
 	}
-	for i := range apis {
-		kept := make([]model.Plugin, 0, len(apis[i].Plugins))
-		for _, p := range apis[i].Plugins {
-			if p.ID != id {
-				kept = append(kept, p)
-			}
-		}
-		apis[i].Plugins = kept
-		if err := applyAPIPlugins(ctx, &apis[i]); err != nil {
-			return err
-		}
-	}
-	return nil
+	return s.db.Delete(&model.Plugin{}, id).Error
 }
 
 func (s *PluginService) get(id uint64) (*model.Plugin, error) {

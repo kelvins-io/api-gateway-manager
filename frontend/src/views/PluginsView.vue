@@ -31,7 +31,11 @@
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button link type="primary" @click="openApis(row)">关联API</el-button>
-          <el-button link type="danger" @click="onDelete(row)">删除</el-button>
+          <el-tooltip :disabled="!row.api_count" content="已关联 API 的 Plugin 不允许删除" placement="top">
+            <span>
+              <el-button link type="danger" @click="onDelete(row)" :disabled="!!row.api_count">删除</el-button>
+            </span>
+          </el-tooltip>
         </template>
       </el-table-column>
     </el-table>
@@ -532,8 +536,8 @@ async function save() {
 }
 
 async function onDelete(row: PluginItem) {
-  if (!store.currentSpaceId) return
-  await ElMessageBox.confirm(`确认删除 Plugin「${row.name}」？已发布 API 上的该插件会一并移除。`, '提示', { type: 'warning' })
+  if (!store.currentSpaceId || row.api_count) return
+  await ElMessageBox.confirm(`确认删除 Plugin「${row.name}」？`, '提示', { type: 'warning' })
   await apiMod.deletePlugin(store.currentSpaceId, row.id)
   ElMessage.success('已删除')
   await load()

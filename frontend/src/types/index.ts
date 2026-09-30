@@ -123,6 +123,7 @@ export interface PluginItem {
   plugin: string
   config: Record<string, unknown>
   enabled: boolean
+  api_count?: number
 }
 
 export interface ApiItem {

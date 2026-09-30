@@ -151,6 +151,8 @@ type Plugin struct {
 	Enabled   bool           `gorm:"not null;default:true" json:"enabled"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
+
+	APICount int64 `gorm:"-" json:"api_count"`
 }
 
 type APIVersion struct {
