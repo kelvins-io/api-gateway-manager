@@ -88,7 +88,7 @@ func (s *ConsumerService) Create(ctx context.Context, spaceID uint64, in UpsertC
 	if err != nil {
 		return nil, err
 	}
-	if err := s.replaceAPIs(ctx, saved.ID, spaceID, in.APIIDs); err != nil {
+	if err := s.replaceAPIs(saved.ID, spaceID, in.APIIDs); err != nil {
 		return nil, err
 	}
 	saved, err = s.Get(saved.ID)
@@ -148,14 +148,18 @@ func (s *ConsumerService) Update(ctx context.Context, id uint64, in UpsertConsum
 	if err != nil {
 		return nil, err
 	}
-	if err := s.replaceAPIs(ctx, id, current.SpaceID, in.APIIDs); err != nil {
+	previous, err := s.linkedAPIGateways(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.replaceAPIs(id, current.SpaceID, in.APIIDs); err != nil {
 		return nil, err
 	}
 	saved, err := s.Get(id)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.syncOne(ctx, saved); err != nil {
+	if err := s.syncLinkedUpdate(ctx, saved, previous); err != nil {
 		return nil, err
 	}
 	if err := s.resyncBoundAPIs(ctx, id); err != nil {
@@ -164,7 +168,7 @@ func (s *ConsumerService) Update(ctx context.Context, id uint64, in UpsertConsum
 	return s.Get(id)
 }
 
-func (s *ConsumerService) replaceAPIs(ctx context.Context, consumerID uint64, spaceID uint64, ids []uint64) error {
+func (s *ConsumerService) replaceAPIs(consumerID uint64, spaceID uint64, ids []uint64) error {
 	consumer, err := s.Get(consumerID)
 	if err != nil {
 		return err
@@ -204,12 +208,12 @@ func (s *ConsumerService) replaceAPIs(ctx context.Context, consumerID uint64, sp
 		if _, ok := next[api.ID]; ok {
 			continue
 		}
-		if err := s.setACLGroup(ctx, consumerID, model.APIACLGroup(api.ID), false); err != nil {
+		if err := s.writeACLGroup(consumerID, model.APIACLGroup(api.ID), false); err != nil {
 			return err
 		}
 	}
 	for _, api := range apis {
-		if err := s.setACLGroup(ctx, consumerID, model.APIACLGroup(api.ID), true); err != nil {
+		if err := s.writeACLGroup(consumerID, model.APIACLGroup(api.ID), true); err != nil {
 			return err
 		}
 	}
@@ -217,6 +221,17 @@ func (s *ConsumerService) replaceAPIs(ctx context.Context, consumerID uint64, sp
 }
 
 func (s *ConsumerService) setACLGroup(ctx context.Context, consumerID uint64, group string, add bool) error {
+	if err := s.writeACLGroup(consumerID, group, add); err != nil {
+		return err
+	}
+	saved, err := s.Get(consumerID)
+	if err != nil {
+		return err
+	}
+	return s.syncOne(ctx, saved)
+}
+
+func (s *ConsumerService) writeACLGroup(consumerID uint64, group string, add bool) error {
 	consumer, err := s.Get(consumerID)
 	if err != nil {
 		return err
@@ -239,14 +254,7 @@ func (s *ConsumerService) setACLGroup(ctx context.Context, consumerID uint64, gr
 		}
 		kept = append(kept, model.ConsumerCredential{ConsumerID: consumerID, Plugin: "acl", Config: datatypes.JSON(raw)})
 	}
-	if err := s.replaceCredentials(consumerID, kept); err != nil {
-		return err
-	}
-	saved, err := s.Get(consumerID)
-	if err != nil {
-		return err
-	}
-	return s.syncOne(ctx, saved)
+	return s.replaceCredentials(consumerID, kept)
 }
 
 func (s *ConsumerService) ensureLinkedACLGroups(consumerID uint64) error {
@@ -422,6 +430,45 @@ func (s *ConsumerService) syncOne(ctx context.Context, consumer *model.Consumer)
 	return s.syncToGateways(ctx, consumer, wanted)
 }
 
+// syncLinkedUpdate pushes a consumer update only to gateways of APIs linked to it.
+// A gateway that no longer has any linked API is removed. Bindings on other gateways stay as they are.
+func (s *ConsumerService) syncLinkedUpdate(ctx context.Context, consumer *model.Consumer, previous map[uint64]model.Gateway) error {
+	wanted, err := s.linkedAPIGateways(consumer.ID)
+	if err != nil {
+		return err
+	}
+	if err := s.upsertGateways(ctx, consumer, wanted); err != nil {
+		return err
+	}
+	for id, gw := range previous {
+		if _, ok := wanted[id]; ok {
+			continue
+		}
+		if err := s.deleteConsumerOnGateway(ctx, consumer.ID, gw); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *ConsumerService) linkedAPIGateways(consumerID uint64) (map[uint64]model.Gateway, error) {
+	wanted := map[uint64]model.Gateway{}
+	var apis []model.API
+	if err := s.db.Joins("JOIN api_consumers ON api_consumers.api_id = apis.id").
+		Where("api_consumers.consumer_id = ?", consumerID).
+		Preload("Group.Gateway").
+		Find(&apis).Error; err != nil {
+		return nil, err
+	}
+	for _, api := range apis {
+		if api.Group == nil || api.Group.Gateway == nil {
+			continue
+		}
+		wanted[api.Group.Gateway.ID] = *api.Group.Gateway
+	}
+	return wanted, nil
+}
+
 func (s *ConsumerService) consumerWantedGateways(consumerID, spaceID uint64) (map[uint64]model.Gateway, error) {
 	wanted := map[uint64]model.Gateway{}
 	spaceGWs, err := s.spaceGateways(spaceID)
@@ -472,6 +519,35 @@ func (s *ConsumerService) spaceGateways(spaceID uint64) ([]model.Gateway, error)
 }
 
 func (s *ConsumerService) syncToGateways(ctx context.Context, consumer *model.Consumer, wanted map[uint64]model.Gateway) error {
+	if err := s.upsertGateways(ctx, consumer, wanted); err != nil {
+		return err
+	}
+	var bindings []model.ConsumerGateway
+	if err := s.db.Where("consumer_id = ?", consumer.ID).Find(&bindings).Error; err != nil {
+		return err
+	}
+	for _, b := range bindings {
+		if _, ok := wanted[b.GatewayID]; ok {
+			continue
+		}
+		var gw model.Gateway
+		if err := s.db.First(&gw, b.GatewayID).Error; err == nil {
+			client, err := kongclient.New(gw.AdminAPI)
+			if err != nil {
+				return err
+			}
+			if err := client.DeleteConsumer(ctx, b.KongConsumerID); err != nil {
+				return err
+			}
+		}
+		if err := s.db.Delete(&model.ConsumerGateway{}, b.ID).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *ConsumerService) upsertGateways(ctx context.Context, consumer *model.Consumer, wanted map[uint64]model.Gateway) error {
 	var bindings []model.ConsumerGateway
 	if err := s.db.Where("consumer_id = ?", consumer.ID).Find(&bindings).Error; err != nil {
 		return err
@@ -501,25 +577,26 @@ func (s *ConsumerService) syncToGateways(ctx context.Context, consumer *model.Co
 			}
 		}
 	}
-	for gid, b := range bound {
-		if _, ok := wanted[gid]; ok {
-			continue
-		}
-		var gw model.Gateway
-		if err := s.db.First(&gw, gid).Error; err == nil {
-			client, err := kongclient.New(gw.AdminAPI)
-			if err != nil {
-				return err
-			}
-			if err := client.DeleteConsumer(ctx, b.KongConsumerID); err != nil {
-				return err
-			}
-		}
-		if err := s.db.Delete(&model.ConsumerGateway{}, b.ID).Error; err != nil {
-			return err
-		}
-	}
 	return nil
+}
+
+func (s *ConsumerService) deleteConsumerOnGateway(ctx context.Context, consumerID uint64, gw model.Gateway) error {
+	var binding model.ConsumerGateway
+	err := s.db.Where("consumer_id = ? AND gateway_id = ?", consumerID, gw.ID).First(&binding).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	client, err := kongclient.New(gw.AdminAPI)
+	if err != nil {
+		return err
+	}
+	if err := client.DeleteConsumer(ctx, binding.KongConsumerID); err != nil {
+		return err
+	}
+	return s.db.Delete(&model.ConsumerGateway{}, binding.ID).Error
 }
 
 func (s *ConsumerService) ensureUnique(spaceID uint64, username, customID string, excludeID uint64) error {
