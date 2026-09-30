@@ -43,7 +43,11 @@
       <el-table-column label="操作" width="160">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" @click="onDelete(row)">删除</el-button>
+          <el-tooltip :disabled="!hasApis(row)" content="已关联 API 的 Consumer 不允许删除" placement="top">
+            <span>
+              <el-button link type="danger" @click="onDelete(row)" :disabled="hasApis(row)">删除</el-button>
+            </span>
+          </el-tooltip>
         </template>
       </el-table-column>
     </el-table>
@@ -357,8 +361,12 @@ async function save() {
   }
 }
 
+function hasApis(row: ConsumerItem) {
+  return (row.apis || []).length > 0
+}
+
 async function onDelete(row: ConsumerItem) {
-  if (!store.currentSpaceId) return
+  if (!store.currentSpaceId || hasApis(row)) return
   await ElMessageBox.confirm(`确认删除 Consumer「${row.username}」？`, '提示', { type: 'warning' })
   await apiMod.deleteConsumer(store.currentSpaceId, row.id)
   ElMessage.success('已删除')

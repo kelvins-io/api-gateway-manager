@@ -341,11 +341,12 @@ func (s *ConsumerService) Delete(ctx context.Context, id uint64) error {
 	if err != nil {
 		return err
 	}
-	var boundAPIs []model.API
-	if err := s.db.Joins("JOIN api_consumers ON api_consumers.api_id = apis.id").
-		Where("api_consumers.consumer_id = ? AND apis.status = ?", id, model.APIStatusPublished).
-		Find(&boundAPIs).Error; err != nil {
+	var linked int64
+	if err := s.db.Table("api_consumers").Where("consumer_id = ?", id).Count(&linked).Error; err != nil {
 		return err
+	}
+	if linked > 0 {
+		return fmt.Errorf("%w: 已关联 API 的 Consumer 不允许删除", ErrConflict)
 	}
 	var bindings []model.ConsumerGateway
 	if err := s.db.Where("consumer_id = ?", id).Find(&bindings).Error; err != nil {
@@ -376,19 +377,7 @@ func (s *ConsumerService) Delete(ctx context.Context, id uint64) error {
 		}
 		return tx.Delete(&model.Consumer{}, consumer.ID).Error
 	})
-	if err != nil {
-		return err
-	}
-	for _, api := range boundAPIs {
-		full, err := (&APIService{db: s.db}).Get(api.ID)
-		if err != nil {
-			return err
-		}
-		if err := applyAPIPlugins(ctx, full); err != nil {
-			return err
-		}
-	}
-	return nil
+	return err
 }
 
 func (s *ConsumerService) resyncBoundAPIs(ctx context.Context, consumerID uint64) error {
