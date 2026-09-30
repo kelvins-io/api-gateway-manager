@@ -1,6 +1,6 @@
 # API Gateway Manager
 
-A Kong-based API gateway management system covering spaces and membership approval, shared/private gateway authorization, API groups, upstreams, consumers, plugins, API publish/version switching, OpenAPI import and batch operations, plus an API market for sharing and cross-space consumer linking.
+A Kong-based API gateway management system covering spaces and membership approval, shared/private gateway authorization, API groups, upstreams, consumers, plugins, API publish/version switching, OpenAPI import and batch operations, a reusable REST API debugger (with space-scoped history), plus an API market for sharing and cross-space consumer linking.
 
 [中文](README.md)
 
@@ -101,7 +101,7 @@ Open `http://localhost:5373`. The Vite dev server proxies `/api` to `http://loca
 
 ### Spaces
 
-- Apply / update / delete spaces; a space with groups cannot be deleted
+- Apply / update / delete spaces; a space with groups, upstreams, consumers, or plugins cannot be deleted
 - Path prefix (e.g. `/order`) is set at creation and immutable; it is prepended to access paths when publishing APIs
 - System admins can approve or reject pending spaces (reject deletes the application)
 - Users may belong to multiple spaces; space admins approve / reject join requests
@@ -134,26 +134,27 @@ Open `http://localhost:5373`. The Vite dev server proxies `/api` to `http://loca
 
 ### Consumers
 
-- Space-scoped; username, Custom ID, and credentials (key-auth, basic-auth, jwt, hmac-auth, acl)
+- Space-scoped; username, Custom ID, and credentials (key-auth, basic-auth, jwt, hmac-auth)
 - Can be linked to APIs that enable matching auth plugins (including market APIs linked across spaces)
-- List shows associated API count; click to open a paged detail dialog (API name, space/group, protocols, full path, methods, auth, status, version, etc.)
-- Synced to gateways bound by the space’s groups on save; manual “sync to gateway” is also available; re-synced when groups change
+- List shows associated API count; click to open a paged detail dialog (API name, space/group, protocols, full path, methods, auth, status, version, etc.); details can launch the debugger
+- On create/update, synced only to gateways of linked APIs; manual “sync to gateway” is also available
+- Consumers linked to APIs cannot be deleted
 - Kong usernames are prefixed by space
 - List supports search by name
 
 ### Plugins
 
-- Space-scoped; types match Kong Gateway **3.4.2 OSS** built-ins, grouped bilingually when creating:
+- Space-scoped; types match Kong Gateway **3.4.2 OSS** built-ins, plus selected custom/advanced plugins, grouped bilingually when creating:
   - Authentication: basic-auth, hmac-auth, jwt, key-auth, ldap-auth, oauth2, session
   - Security: acme, bot-detection, cors, ip-restriction
-  - Traffic Control: acl, proxy-cache, rate-limiting, request-size-limiting, request-termination, response-ratelimiting
+  - Traffic Control: acl, proxy-cache, proxy-cache-advanced, rate-limiting, request-size-limiting, request-termination, response-ratelimiting, response-ratelimiting-advanced
   - Serverless: aws-lambda, azure-functions, pre-function, post-function
   - Analytics & Monitoring: datadog, opentelemetry, prometheus, statsd, zipkin
-  - Transformations: correlation-id, grpc-gateway, grpc-web, request-transformer, response-transformer
+  - Transformations: correlation-id, grpc-gateway, grpc-gateway-advanced, grpc-web, grpc-web-advanced, request-gzip, request-transformer, response-gzip, response-transformer
   - Logging: file-log, http-log, loggly, syslog, tcp-log, udp-log
-- Common plugins have dedicated forms; enum fields use selects; `request-transformer` / `response-transformer` have visual editors; others follow Kong 3.4.2 schema (nested fields as JSON), validated by Kong on publish
+- Common plugins have dedicated forms; enum fields use selects; `request-transformer` / `response-transformer` have visual editors; others follow schema forms (nested fields as JSON), validated by Kong on publish
 - APIs can attach multiple plugins; bindings sync to the Kong Service on publish / update
-- Updating or deleting a plugin refreshes still-published linked APIs
+- Updating a plugin refreshes still-published linked APIs; plugins linked to APIs cannot be deleted
 - View APIs linked to a plugin; version details show the plugin snapshot for that version
 - List supports search by name
 
@@ -171,7 +172,16 @@ Open `http://localhost:5373`. The Vite dev server proxies `/api` to `http://loca
 - **Share / unshare**: only published APIs can be shared to the API market
 - **Batch operations**: multi-select to publish, offline, or delete (ineligible items are skipped)
 - **Copy as curl**: build a curl command from gateway Domain, access path, and auth, then copy to clipboard
+- **Debug**: open the REST debugger from the list with the API’s URL and method prefilled
 - List supports search by name, status, and share flag
+
+### API Debugger
+
+- Entry points: API Management, consumer-linked API details, and API Market (unauthenticated market APIs)
+- Supports method, URL, query, headers, and body (none / JSON / raw / x-www-form-urlencoded / form-data)
+- Auth aligned with Kong plugins: key-auth, basic-auth, jwt, hmac-auth; credentials can be prefilled when opened from a consumer
+- Request modes: auto (fall back to proxy on CORS failure), browser direct, or server-side proxy (`/api/v1/debug/proxy`)
+- **Space debug history**: space members can save the current request snapshot to the space; peers can view and reuse; the creator or a space admin can delete
 
 ### API Market
 
@@ -179,6 +189,7 @@ Open `http://localhost:5373`. The Vite dev server proxies `/api` to `http://loca
 - Shows space, access protocols, full access URL, methods, auth type, and current version
 - Visible to all logged-in users; share/unshare is managed by space admins in API Management
 - Space admins can link their space’s consumers to market APIs that have auth enabled (cross-space consumption); APIs without auth cannot be linked
+- Unauthenticated market APIs can be debugged directly
 - List supports search by API name and auth type
 
 ## Configuration
@@ -189,6 +200,13 @@ See [backend/configs/config.yaml](backend/configs/config.yaml):
 - Database defaults: `agm / agm123 @ localhost:15444 / api_gateway_manager`
 - JWT secret and expiry are configurable
 - Env var prefix `AGM_` (e.g. `AGM_SERVER_PORT=10000`, `AGM_JWT_SECRET=...`)
+
+Frontend page URL prefix: see [frontend/.env.example](frontend/.env.example):
+
+- `VITE_BASE_PATH`: page URL prefix (no scheme/host); empty or `/` means root
+- API routes stay at `/api` and do not follow this prefix; login redirects use in-app relative paths
+- Local: copy to `frontend/.env` and restart `npm run dev`
+- Docker: set the same variable in the repo-root `.env` or environment, then rebuild the frontend image
 
 ## Smoke Test Account
 

@@ -1,6 +1,6 @@
 # API Gateway Manager
 
-基于 Kong 的 API 网关管理系统：空间与成员审批、共享/私有网关授权、API 分组、Upstream、Consumer、Plugin、API 发布与版本切换、OpenAPI 导入与批量运维，以及 API 市场分享与跨空间 Consumer 关联。
+基于 Kong 的 API 网关管理系统：空间与成员审批、共享/私有网关授权、API 分组、Upstream、Consumer、Plugin、API 发布与版本切换、OpenAPI 导入与批量运维、可复用的 REST API 调试器（含空间级历史），以及 API 市场分享与跨空间 Consumer 关联。
 
 [English](README_EN.md)
 
@@ -101,7 +101,7 @@ make frontend
 
 ### 空间管理
 
-- 申请 / 更新 / 删除空间；空间下仍有分组时不能删除
+- 申请 / 更新 / 删除空间；空间下仍有分组、Upstream、Consumer 或 Plugin 时不能删除
 - 创建时指定路径前缀（如 `/order`），创建后不可修改；发布 API 时会拼到接入路径前面
 - 系统管理员可审批或拒绝待审批空间（拒绝即删除申请）
 - 加入空间（用户可属于多个空间）；空间管理员可审批 / 拒绝加入申请
@@ -134,26 +134,27 @@ make frontend
 
 ### Consumers
 
-- 隶属于某个空间，字段为用户名、Custom ID，以及凭证（key-auth、basic-auth、jwt、hmac-auth、acl）
+- 隶属于某个空间，字段为用户名、Custom ID，以及凭证（key-auth、basic-auth、jwt、hmac-auth）
 - 可关联开启了对应认证插件的 API（含本空间及市场跨空间关联的 API）
-- 列表展示关联 API 数量，点击可分页查看详情（API 名、所属空间/分组、协议、完整路径、方法、认证、状态、版本等）
-- 保存后同步到该空间分组已绑定的网关；也可手动「同步到网关」。分组增删时会重新同步
+- 列表展示关联 API 数量，点击可分页查看详情（API 名、所属空间/分组、协议、完整路径、方法、认证、状态、版本等）；详情中可直接发起调试
+- 新建 / 更新后仅同步到已关联 API 所在网关；也可手动「同步到网关」
+- 已关联 API 的 Consumer 不允许删除
 - 写入 Kong 的用户名带空间前缀
 - 列表支持按名称搜索
 
 ### Plugins
 
-- 隶属于某个空间；可选类型对齐 Kong Gateway **3.4.2 OSS** 自带插件，新建时按分类展示（中英双语）：
+- 隶属于某个空间；可选类型对齐 Kong Gateway **3.4.2 OSS** 自带插件，并支持部分自定义 / 高级插件，新建时按分类展示（中英双语）：
   - 认证 / Authentication：basic-auth、hmac-auth、jwt、key-auth、ldap-auth、oauth2、session
   - 安全 / Security：acme、bot-detection、cors、ip-restriction
-  - 流量控制 / Traffic Control：acl、proxy-cache、rate-limiting、request-size-limiting、request-termination、response-ratelimiting
+  - 流量控制 / Traffic Control：acl、proxy-cache、proxy-cache-advanced、rate-limiting、request-size-limiting、request-termination、response-ratelimiting、response-ratelimiting-advanced
   - 无服务器 / Serverless：aws-lambda、azure-functions、pre-function、post-function
   - 分析与监控 / Analytics & Monitoring：datadog、opentelemetry、prometheus、statsd、zipkin
-  - 转换 / Transformations：correlation-id、grpc-gateway、grpc-web、request-transformer、response-transformer
+  - 转换 / Transformations：correlation-id、grpc-gateway、grpc-gateway-advanced、grpc-web、grpc-web-advanced、request-gzip、request-transformer、response-gzip、response-transformer
   - 日志 / Logging：file-log、http-log、loggly、syslog、tcp-log、udp-log
-- 常用插件提供表单；枚举类配置使用下拉选择；`request-transformer` / `response-transformer` 提供可视化编辑器；其余插件按 Kong 3.4.2 schema 提供配置表单（嵌套结构用 JSON 字段），发布时由 Kong 校验
+- 常用插件提供表单；枚举类配置使用下拉选择；`request-transformer` / `response-transformer` 提供可视化编辑器；其余插件按 schema 提供配置表单（嵌套结构用 JSON 字段），发布时由 Kong 校验
 - API 可关联多个 Plugin；发布或更新关联后，同步到该 API 对应的 Kong Service
-- 修改或删除 Plugin 时，会更新仍在发布状态的关联 API
+- 修改 Plugin 时，会更新仍在发布状态的关联 API；已关联 API 的 Plugin 不允许删除
 - 可查看某个 Plugin 当前关联的 API；版本详情中可查看该版本绑定的 Plugin 快照
 - 列表支持按名称搜索
 
@@ -171,7 +172,16 @@ make frontend
 - **分享 / 取消分享**：仅已发布的 API 可分享到 API 市场
 - **批量操作**：多选后可批量发布、下线、删除（自动跳过不符合条件的项）
 - **复制 Curl**：按网关 Domain、接入路径与认证信息生成 curl 命令并复制到剪贴板
+- **调试**：列表可打开 REST 调试器，预填该 API 的访问地址与方法
 - 列表支持按名称、状态、是否分享搜索
+
+### API 调试器
+
+- 入口：API 管理、Consumer 关联的 API 详情、API 市场（未启用认证的市场 API）
+- 支持 Method、URL、Query、Header、Body（none / JSON / Raw / x-www-form-urlencoded / form-data）
+- 认证对齐 Kong 插件：key-auth、basic-auth、jwt、hmac-auth；从 Consumer 进入时可带入凭证
+- 请求方式：自动（CORS 失败走代理）、浏览器直连、服务端代理（后端 `/api/v1/debug/proxy`，规避跨域）
+- **空间调试历史**：空间成员可将当前请求快照保存到所属空间，同空间成员可查看与复用；创建者或空间管理员可删除
 
 ### API 市场
 
@@ -179,6 +189,7 @@ make frontend
 - 可见所属空间、接入协议、完整访问地址、请求方法、认证类型与当前版本
 - 登录用户均可浏览；分享与取消分享由对应空间管理员在 API 管理中操作
 - 空间管理员可将本空间 Consumer 关联到已启用认证的市场 API（跨空间消费），未启用认证的 API 不可关联
+- 未启用认证的市场 API 可直接调试
 - 列表支持按 API 名称、认证类型搜索
 
 ## 配置
@@ -189,6 +200,13 @@ make frontend
 - 数据库默认：`agm / agm123 @ localhost:15444 / api_gateway_manager`
 - JWT secret 与过期时间可按需修改
 - 环境变量前缀 `AGM_`（如 `AGM_SERVER_PORT=10000`、`AGM_JWT_SECRET=...`）
+
+前端页面访问前缀见 [frontend/.env.example](frontend/.env.example)：
+
+- `VITE_BASE_PATH`：页面 URL 前缀（不含协议和主机）；留空或 `/` 表示根路径
+- 接口仍走 `/api`，不随此前缀变化；登录回跳为应用内相对路径
+- 本地开发：复制为 `frontend/.env` 后重启 `npm run dev`
+- Docker：在仓库根目录 `.env` 或环境变量中设置同名变量后重新构建 frontend 镜像
 
 ## 本地验证账号
 
