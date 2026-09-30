@@ -132,7 +132,7 @@ func (s *SpaceService) List(userID uint64, isSystemAdmin bool) ([]model.Space, e
 		for i := range spaces {
 			spaces[i].MemberStatus = model.MemberStatusActive
 		}
-		if err := fillSpaceGroupCounts(s.db, spaces); err != nil {
+		if err := fillSpaceResourceCounts(s.db, spaces); err != nil {
 			return nil, err
 		}
 		return spaces, nil
@@ -157,13 +157,13 @@ func (s *SpaceService) List(userID uint64, isSystemAdmin bool) ([]model.Space, e
 		spaces[i] = r.Space
 		spaces[i].MemberStatus = r.MemberStatus
 	}
-	if err := fillSpaceGroupCounts(s.db, spaces); err != nil {
+	if err := fillSpaceResourceCounts(s.db, spaces); err != nil {
 		return nil, err
 	}
 	return spaces, nil
 }
 
-func fillSpaceGroupCounts(db *gorm.DB, list []model.Space) error {
+func fillSpaceResourceCounts(db *gorm.DB, list []model.Space) error {
 	if len(list) == 0 {
 		return nil
 	}
@@ -175,18 +175,30 @@ func fillSpaceGroupCounts(db *gorm.DB, list []model.Space) error {
 		SpaceID uint64
 		Cnt     int64
 	}
-	var rows []row
-	if err := db.Model(&model.APIGroup{}).Select("space_id, count(*) as cnt").Where("space_id IN ?", ids).Group("space_id").Scan(&rows).Error; err != nil {
+	fill := func(dest interface{}, set func(int, int64)) error {
+		var rows []row
+		if err := db.Model(dest).Select("space_id, count(*) as cnt").Where("space_id IN ?", ids).Group("space_id").Scan(&rows).Error; err != nil {
+			return err
+		}
+		counts := make(map[uint64]int64, len(rows))
+		for _, r := range rows {
+			counts[r.SpaceID] = r.Cnt
+		}
+		for i := range list {
+			set(i, counts[list[i].ID])
+		}
+		return nil
+	}
+	if err := fill(&model.APIGroup{}, func(i int, n int64) { list[i].GroupCount = n }); err != nil {
 		return err
 	}
-	counts := make(map[uint64]int64, len(rows))
-	for _, r := range rows {
-		counts[r.SpaceID] = r.Cnt
+	if err := fill(&model.Upstream{}, func(i int, n int64) { list[i].UpstreamCount = n }); err != nil {
+		return err
 	}
-	for i := range list {
-		list[i].GroupCount = counts[list[i].ID]
+	if err := fill(&model.Consumer{}, func(i int, n int64) { list[i].ConsumerCount = n }); err != nil {
+		return err
 	}
-	return nil
+	return fill(&model.Plugin{}, func(i int, n int64) { list[i].PluginCount = n })
 }
 
 func (s *SpaceService) Get(id uint64) (*model.Space, error) {
@@ -230,53 +242,33 @@ func (s *SpaceService) Update(id uint64, in UpdateSpaceInput) (*model.Space, err
 	return s.Get(id)
 }
 
-func (s *SpaceService) Delete(ctx context.Context, id uint64) error {
+func (s *SpaceService) Delete(_ context.Context, id uint64) error {
 	if _, err := s.Get(id); err != nil {
 		return err
 	}
-	var groupCount int64
-	if err := s.db.Model(&model.APIGroup{}).Where("space_id = ?", id).Count(&groupCount).Error; err != nil {
-		return err
+	checks := []struct {
+		model interface{}
+		msg   string
+	}{
+		{&model.APIGroup{}, "空间下仍有分组，不能删除"},
+		{&model.Upstream{}, "空间下仍有 Upstream，不能删除"},
+		{&model.Consumer{}, "空间下仍有 Consumer，不能删除"},
+		{&model.Plugin{}, "空间下仍有 Plugin，不能删除"},
 	}
-	if groupCount > 0 {
-		return fmt.Errorf("%w: 空间下仍有分组，不能删除", ErrConflict)
-	}
-
-	var ups []model.Upstream
-	if err := s.db.Where("space_id = ?", id).Find(&ups).Error; err != nil {
-		return err
-	}
-	upSvc := NewUpstreamService(s.db)
-	for _, up := range ups {
-		if err := upSvc.Delete(ctx, up.ID); err != nil {
+	for _, c := range checks {
+		var count int64
+		if err := s.db.Model(c.model).Where("space_id = ?", id).Count(&count).Error; err != nil {
 			return err
+		}
+		if count > 0 {
+			return fmt.Errorf("%w: %s", ErrConflict, c.msg)
 		}
 	}
 
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		var consumerIDs []uint64
-		if err := tx.Model(&model.Consumer{}).Where("space_id = ?", id).Pluck("id", &consumerIDs).Error; err != nil {
-			return err
-		}
-		if len(consumerIDs) > 0 {
-			if err := tx.Exec("DELETE FROM api_consumers WHERE consumer_id IN ?", consumerIDs).Error; err != nil {
-				return err
-			}
-			if err := tx.Exec("DELETE FROM consumer_gateways WHERE consumer_id IN ?", consumerIDs).Error; err != nil {
-				return err
-			}
-			if err := tx.Exec("DELETE FROM consumer_credentials WHERE consumer_id IN ?", consumerIDs).Error; err != nil {
-				return err
-			}
-			if err := tx.Exec("DELETE FROM consumers WHERE space_id = ?", id).Error; err != nil {
-				return err
-			}
-		}
-
 		// Use raw SQL so GORM zero-PK Delete quirks cannot leave child rows
 		// that block the spaces foreign key.
 		for _, stmt := range []string{
-			"DELETE FROM plugins WHERE space_id = ?",
 			"DELETE FROM gateway_spaces WHERE space_id = ?",
 			"DELETE FROM space_members WHERE space_id = ?",
 		} {

@@ -46,9 +46,9 @@
           <template v-else-if="isUsable(row)">
             <el-button link type="primary" @click="$router.push(`/spaces/${row.id}/members`)">成员</el-button>
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-tooltip :disabled="!row.group_count" content="空间下仍有分组，不能删除" placement="top">
+            <el-tooltip :disabled="canDeleteSpace(row)" :content="spaceDeleteHint(row)" placement="top">
               <span>
-                <el-button link type="danger" @click="onDelete(row)" :disabled="!!row.group_count">删除</el-button>
+                <el-button link type="danger" @click="onDelete(row)" :disabled="!canDeleteSpace(row)">删除</el-button>
               </span>
             </el-tooltip>
           </template>
@@ -209,10 +209,25 @@ async function save() {
 }
 
 async function onDelete(row: Space) {
+  if (!canDeleteSpace(row)) return
   await ElMessageBox.confirm(`确认删除空间「${row.name}」？`, '提示', { type: 'warning' })
   await spaceApi.deleteSpace(row.id)
   ElMessage.success('已删除')
   await load()
+}
+
+function canDeleteSpace(row: Space) {
+  return !row.group_count && !row.upstream_count && !row.consumer_count && !row.plugin_count
+}
+
+function spaceDeleteHint(row: Space) {
+  const parts: string[] = []
+  if (row.group_count) parts.push('分组')
+  if (row.upstream_count) parts.push('Upstream')
+  if (row.consumer_count) parts.push('Consumer')
+  if (row.plugin_count) parts.push('Plugin')
+  if (!parts.length) return ''
+  return `空间下仍有${parts.join('、')}，不能删除`
 }
 
 async function onApproveSpace(row: Space) {

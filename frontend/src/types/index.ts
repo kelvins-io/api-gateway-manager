@@ -20,6 +20,9 @@ export interface Space {
   status: string
   member_status?: string
   group_count?: number
+  upstream_count?: number
+  consumer_count?: number
+  plugin_count?: number
   created_at?: string
 }
 

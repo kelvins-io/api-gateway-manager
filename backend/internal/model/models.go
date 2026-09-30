@@ -46,8 +46,11 @@ type Space struct {
 	Status       string    `gorm:"size:32;not null;default:active;index" json:"status"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
-	GroupCount   int64     `gorm:"-" json:"group_count"`
-	MemberStatus string    `gorm:"-" json:"member_status,omitempty"` // current user's membership status
+	GroupCount     int64     `gorm:"-" json:"group_count"`
+	UpstreamCount  int64     `gorm:"-" json:"upstream_count"`
+	ConsumerCount  int64     `gorm:"-" json:"consumer_count"`
+	PluginCount    int64     `gorm:"-" json:"plugin_count"`
+	MemberStatus   string    `gorm:"-" json:"member_status,omitempty"` // current user's membership status
 }
 
 type SpaceMember struct {
