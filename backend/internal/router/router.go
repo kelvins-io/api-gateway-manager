@@ -88,6 +88,11 @@ func Setup(db *gorm.DB, jwtMgr *jwtutil.Manager, log *zap.Logger, h Handlers) *g
 			authed.PUT("/spaces/:id/plugins/:pid", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Plugin.Update)
 			authed.DELETE("/spaces/:id/plugins/:pid", middleware.RequireSpaceRole(db, "id", model.RoleSpaceAdmin), h.Plugin.Delete)
 
+			authed.GET("/spaces/:id/debug-histories", middleware.RequireSpaceRole(db, "id"), h.Debug.ListHistories)
+			authed.POST("/spaces/:id/debug-histories", middleware.RequireSpaceRole(db, "id"), h.Debug.CreateHistory)
+			authed.GET("/spaces/:id/debug-histories/:hid", middleware.RequireSpaceRole(db, "id"), h.Debug.GetHistory)
+			authed.DELETE("/spaces/:id/debug-histories/:hid", middleware.RequireSpaceRole(db, "id"), h.Debug.DeleteHistory)
+
 			// gateways: full CRUD only for system admin
 			admin := authed.Group("")
 			admin.Use(middleware.RequireSystemAdmin())

@@ -45,6 +45,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.ConsumerCredential{},
 		&model.ConsumerGateway{},
 		&model.Plugin{},
+		&model.DebugHistory{},
 	); err != nil {
 		return err
 	}

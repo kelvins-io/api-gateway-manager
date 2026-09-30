@@ -23,6 +23,8 @@
           @keyup.enter="send"
         />
         <el-button type="primary" :loading="sending" @click="send">发送</el-button>
+        <el-button :loading="saving" :disabled="!canSave" @click="saveHistory">保存</el-button>
+        <el-button :disabled="!resolvedSpaceId" @click="openHistory">历史</el-button>
       </div>
 
       <div class="proxy-row">
@@ -166,14 +168,53 @@
         </el-tabs>
       </div>
     </div>
+
+    <el-drawer
+      v-model="historyVisible"
+      title="空间调试历史"
+      size="420px"
+      append-to-body
+      destroy-on-close
+    >
+      <el-table
+        :data="historyList"
+        v-loading="historyLoading"
+        stripe
+        empty-text="暂无调试历史"
+        max-height="70vh"
+        @row-click="loadHistory"
+      >
+        <el-table-column label="记录" min-width="220">
+          <template #default="{ row }">
+            <div class="hist-title">{{ row.title }}</div>
+            <div class="hist-meta">
+              {{ row.method }} · {{ row.creator?.username || '-' }} · {{ formatTime(row.created_at) }}
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="" width="56" align="right">
+          <template #default="{ row }">
+            <el-button link type="danger" @click.stop="removeHistory(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-drawer>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ApiItem, ConsumerItem } from '@/types'
-import { proxyDebugRequest } from '@/api/debug'
+import {
+  createDebugHistory,
+  deleteDebugHistory,
+  listDebugHistories,
+  proxyDebugRequest,
+  type DebugHistoryItem,
+  type DebugHistoryRequest,
+} from '@/api/debug'
+import { useUserStore } from '@/stores/user'
 import KeyValueEditor from './debugger/KeyValueEditor.vue'
 import type { KvPair } from './debugger/KeyValueEditor.vue'
 import FormDataEditor from './debugger/FormDataEditor.vue'
@@ -199,6 +240,8 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean]
 }>()
 
+const store = useUserStore()
+
 const methodOptions = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 const authPlugins = ['key-auth', 'basic-auth', 'jwt', 'hmac-auth'] as const
 type AuthType = 'none' | (typeof authPlugins)[number]
@@ -209,9 +252,14 @@ const url = ref('')
 const proxyMode = ref<'auto' | 'direct' | 'proxy'>('auto')
 const usedProxy = ref(false)
 const sending = ref(false)
+const saving = ref(false)
 const reqTab = ref('headers')
 const respTab = ref('body')
 const errorMsg = ref('')
+
+const historyVisible = ref(false)
+const historyLoading = ref(false)
+const historyList = ref<DebugHistoryItem[]>([])
 
 const params = ref<KvPair[]>([emptyPair()])
 const headers = ref<KvPair[]>([emptyPair()])
@@ -236,6 +284,13 @@ const response = ref<DebugResponse | null>(null)
 const dialogTitle = computed(() =>
   props.api?.name ? `调试 API · ${props.api.name}` : 'API 调试',
 )
+
+const resolvedSpaceId = computed(() => {
+  if (store.currentSpaceId) return store.currentSpaceId
+  return props.api?.group?.space?.id || null
+})
+
+const canSave = computed(() => !!resolvedSpaceId.value && !!url.value.trim())
 
 const prettyBody = computed(() => {
   const body = response.value?.body ?? ''
@@ -734,6 +789,193 @@ function formatSize(n: number) {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
+
+function formatTime(raw: string) {
+  if (!raw) return '-'
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return raw
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+function buildRequestSnapshot(): DebugHistoryRequest {
+  return {
+    proxy_mode: proxyMode.value,
+    params: params.value
+      .filter((p) => p.key.trim() || p.value)
+      .map((p) => ({ enabled: p.enabled, key: p.key, value: p.value })),
+    headers: headers.value
+      .filter((h) => h.key.trim() || h.value)
+      .map((h) => ({ enabled: h.enabled, key: h.key, value: h.value })),
+    body_type: bodyType.value,
+    body_text: bodyType.value === 'json' || bodyType.value === 'raw' ? bodyText.value : '',
+    form_fields:
+      bodyType.value === 'x-www-form-urlencoded'
+        ? formFields.value
+            .filter((f) => f.key.trim() || f.value)
+            .map((f) => ({ enabled: f.enabled, key: f.key, value: f.value }))
+        : [],
+    form_data_fields:
+      bodyType.value === 'form-data'
+        ? formDataFields.value
+            .filter((f) => f.key.trim() || f.value || f.file)
+            .map((f) => ({
+              enabled: f.enabled,
+              key: f.key,
+              type: f.type,
+              value: f.type === 'text' ? f.value : '',
+              file_name: f.type === 'file' ? f.file?.name || '' : undefined,
+            }))
+        : [],
+    auth: {
+      type: authType.value,
+      key_name: authKeyName.value,
+      key_value: authKeyValue.value,
+      key_in: authKeyIn.value,
+      username: authUsername.value,
+      password: authPassword.value,
+      jwt_header: authJwtHeader.value,
+      jwt_token: authJwtToken.value,
+      hmac_secret: authHmacSecret.value,
+      hmac_algo: authHmacAlgo.value,
+    },
+  }
+}
+
+async function saveHistory() {
+  const spaceId = resolvedSpaceId.value
+  if (!spaceId) {
+    ElMessage.warning('当前无可用空间，无法保存调试历史')
+    return
+  }
+  if (!url.value.trim()) {
+    ElMessage.warning('请先填写请求 URL')
+    return
+  }
+  const defaultTitle = `${method.value} ${url.value.trim()}`.slice(0, 120)
+  let title = defaultTitle
+  try {
+    const { value } = await ElMessageBox.prompt('可为本次调试记录命名（空间成员可见）', '保存调试历史', {
+      inputValue: defaultTitle,
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+      inputPlaceholder: '记录名称',
+    })
+    title = (value || defaultTitle).trim() || defaultTitle
+  } catch {
+    return
+  }
+  saving.value = true
+  try {
+    await createDebugHistory(spaceId, {
+      title,
+      api_id: props.api?.id,
+      api_name: props.api?.name,
+      method: method.value,
+      url: url.value.trim(),
+      request: buildRequestSnapshot(),
+    })
+    ElMessage.success('已保存到空间调试历史')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function openHistory() {
+  const spaceId = resolvedSpaceId.value
+  if (!spaceId) {
+    ElMessage.warning('当前无可用空间')
+    return
+  }
+  historyVisible.value = true
+  historyLoading.value = true
+  try {
+    historyList.value = (await listDebugHistories(spaceId)) || []
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+function loadHistory(row: DebugHistoryItem) {
+  const raw = row.request as unknown
+  const req = (
+    typeof raw === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(raw)
+          } catch {
+            return {}
+          }
+        })()
+      : raw || {}
+  ) as DebugHistoryRequest
+  method.value = row.method || 'GET'
+  url.value = row.url || ''
+  proxyMode.value = (req.proxy_mode as 'auto' | 'direct' | 'proxy') || 'auto'
+  params.value = (req.params || []).map((p) => ({
+    enabled: p.enabled !== false,
+    key: p.key || '',
+    value: p.value || '',
+  }))
+  if (!params.value.length) params.value = [emptyPair()]
+  else params.value.push(emptyPair())
+
+  headers.value = (req.headers || []).map((h) => ({
+    enabled: h.enabled !== false,
+    key: h.key || '',
+    value: h.value || '',
+  }))
+  if (!headers.value.length) headers.value = [emptyPair()]
+  else headers.value.push(emptyPair())
+
+  bodyType.value = (req.body_type as typeof bodyType.value) || 'none'
+  bodyText.value = req.body_text || ''
+  formFields.value = (req.form_fields || []).map((f) => ({
+    enabled: f.enabled !== false,
+    key: f.key || '',
+    value: f.value || '',
+  }))
+  if (!formFields.value.length) formFields.value = [emptyPair()]
+  else formFields.value.push(emptyPair())
+
+  formDataFields.value = (req.form_data_fields || []).map((f) => ({
+    enabled: f.enabled !== false,
+    key: f.key || '',
+    type: f.type === 'file' ? 'file' : 'text',
+    value: f.value || '',
+    file: null,
+  }))
+  if (!formDataFields.value.length) formDataFields.value = [emptyFormDataField()]
+  else formDataFields.value.push(emptyFormDataField())
+
+  const auth = (req.auth || {}) as Record<string, string>
+  const t = (auth.type || 'none') as AuthType
+  authType.value = authPlugins.includes(t as (typeof authPlugins)[number]) || t === 'none' ? t : 'none'
+  authKeyName.value = auth.key_name || 'apikey'
+  authKeyValue.value = auth.key_value || ''
+  authKeyIn.value = auth.key_in === 'query' ? 'query' : 'header'
+  authUsername.value = auth.username || ''
+  authPassword.value = auth.password || ''
+  authJwtHeader.value = auth.jwt_header || 'Authorization'
+  authJwtToken.value = auth.jwt_token || ''
+  authHmacSecret.value = auth.hmac_secret || ''
+  authHmacAlgo.value = (hmacAlgorithms as readonly string[]).includes(auth.hmac_algo)
+    ? (auth.hmac_algo as (typeof hmacAlgorithms)[number])
+    : 'hmac-sha256'
+
+  resetResponse()
+  historyVisible.value = false
+  ElMessage.success('已加载调试记录')
+}
+
+async function removeHistory(row: DebugHistoryItem) {
+  const spaceId = resolvedSpaceId.value
+  if (!spaceId) return
+  await ElMessageBox.confirm(`确认删除调试记录「${row.title}」？`, '删除确认', { type: 'warning' })
+  await deleteDebugHistory(spaceId, row.id)
+  historyList.value = historyList.value.filter((i) => i.id !== row.id)
+  ElMessage.success('已删除')
+}
 </script>
 
 <style scoped>
@@ -813,6 +1055,16 @@ function formatSize(n: number) {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
+}
+.hist-title {
+  font-weight: 500;
+  line-height: 1.4;
+  word-break: break-all;
+}
+.hist-meta {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
 }
 </style>
 

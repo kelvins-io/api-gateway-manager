@@ -53,6 +53,7 @@ func main() {
 	consumerSvc := service.NewConsumerService(db)
 	pluginSvc := service.NewPluginService(db)
 	debugProxySvc := service.NewDebugProxyService()
+	debugHistorySvc := service.NewDebugHistoryService(db)
 
 	r := router.Setup(db, jwtMgr, log, router.Handlers{
 		Auth:     handler.NewAuthHandler(authSvc),
@@ -63,7 +64,7 @@ func main() {
 		Upstream: handler.NewUpstreamHandler(upstreamSvc),
 		Consumer: handler.NewConsumerHandler(consumerSvc),
 		Plugin:   handler.NewPluginHandler(pluginSvc),
-		Debug:    handler.NewDebugHandler(debugProxySvc),
+		Debug:    handler.NewDebugHandler(debugProxySvc, debugHistorySvc, db),
 		APISvc:   apiSvc,
 		GroupSvc: groupSvc,
 	})

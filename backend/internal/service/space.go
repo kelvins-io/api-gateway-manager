@@ -269,6 +269,7 @@ func (s *SpaceService) Delete(_ context.Context, id uint64) error {
 		// Use raw SQL so GORM zero-PK Delete quirks cannot leave child rows
 		// that block the spaces foreign key.
 		for _, stmt := range []string{
+			"DELETE FROM debug_histories WHERE space_id = ?",
 			"DELETE FROM gateway_spaces WHERE space_id = ?",
 			"DELETE FROM space_members WHERE space_id = ?",
 		} {

@@ -167,6 +167,23 @@ type APIVersion struct {
 	CreatedAt      time.Time      `json:"created_at"`
 }
 
+// DebugHistory stores a space-scoped API debugger request snapshot for members.
+type DebugHistory struct {
+	ID        uint64         `gorm:"primaryKey" json:"id"`
+	SpaceID   uint64         `gorm:"not null;index" json:"space_id"`
+	CreatedBy uint64         `gorm:"not null;index" json:"created_by"`
+	APIID     *uint64        `gorm:"index" json:"api_id,omitempty"`
+	APIName   string         `gorm:"size:128" json:"api_name"`
+	Title     string         `gorm:"size:255;not null" json:"title"`
+	Method    string         `gorm:"size:16;not null" json:"method"`
+	URL       string         `gorm:"size:2048;not null" json:"url"`
+	Request   datatypes.JSON `gorm:"type:jsonb;not null" json:"request"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+
+	Creator *User `gorm:"foreignKey:CreatedBy" json:"creator,omitempty"`
+}
+
 // APIConfigSnapshot is stored in api_versions.config_snapshot
 type APIConfigSnapshot struct {
 	Name                  string              `json:"name"`
