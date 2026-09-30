@@ -197,6 +197,7 @@ func (s *UpstreamService) Delete(ctx context.Context, id uint64) error {
 	if err := s.db.Where("upstream_id = ?", id).Find(&bindings).Error; err != nil {
 		return err
 	}
+	kongName := model.KongUpstreamName(up.SpaceID, up.Name)
 	for _, b := range bindings {
 		var gw model.Gateway
 		if err := s.db.First(&gw, b.GatewayID).Error; err != nil {
@@ -206,7 +207,11 @@ func (s *UpstreamService) Delete(ctx context.Context, id uint64) error {
 		if err != nil {
 			return err
 		}
-		if err := client.DeleteUpstream(ctx, b.KongUpstreamID); err != nil {
+		idOrName := b.KongUpstreamID
+		if idOrName == "" {
+			idOrName = kongName
+		}
+		if err := client.DeleteUpstream(ctx, idOrName); err != nil {
 			return err
 		}
 	}

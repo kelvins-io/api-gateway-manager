@@ -86,7 +86,7 @@ func (h *SpaceHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.svc.Delete(id); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), id); err != nil {
 		mapError(c, err)
 		return
 	}
@@ -111,7 +111,7 @@ func (h *SpaceHandler) Reject(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.svc.Reject(id); err != nil {
+	if err := h.svc.Reject(c.Request.Context(), id); err != nil {
 		mapError(c, err)
 		return
 	}

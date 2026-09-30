@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -229,7 +230,7 @@ func (s *SpaceService) Update(id uint64, in UpdateSpaceInput) (*model.Space, err
 	return s.Get(id)
 }
 
-func (s *SpaceService) Delete(id uint64) error {
+func (s *SpaceService) Delete(ctx context.Context, id uint64) error {
 	if _, err := s.Get(id); err != nil {
 		return err
 	}
@@ -240,26 +241,51 @@ func (s *SpaceService) Delete(id uint64) error {
 	if groupCount > 0 {
 		return fmt.Errorf("%w: 空间下仍有分组，不能删除", ErrConflict)
 	}
+
+	var ups []model.Upstream
+	if err := s.db.Where("space_id = ?", id).Find(&ups).Error; err != nil {
+		return err
+	}
+	upSvc := NewUpstreamService(s.db)
+	for _, up := range ups {
+		if err := upSvc.Delete(ctx, up.ID); err != nil {
+			return err
+		}
+	}
+
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		var ups []model.Upstream
-		if err := tx.Where("space_id = ?", id).Find(&ups).Error; err != nil {
+		var consumerIDs []uint64
+		if err := tx.Model(&model.Consumer{}).Where("space_id = ?", id).Pluck("id", &consumerIDs).Error; err != nil {
 			return err
 		}
-		for _, up := range ups {
-			if err := tx.Where("upstream_id = ?", up.ID).Delete(&model.UpstreamTarget{}).Error; err != nil {
+		if len(consumerIDs) > 0 {
+			if err := tx.Exec("DELETE FROM api_consumers WHERE consumer_id IN ?", consumerIDs).Error; err != nil {
 				return err
 			}
-			if err := tx.Where("upstream_id = ?", up.ID).Delete(&model.UpstreamGateway{}).Error; err != nil {
+			if err := tx.Exec("DELETE FROM consumer_gateways WHERE consumer_id IN ?", consumerIDs).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("DELETE FROM consumer_credentials WHERE consumer_id IN ?", consumerIDs).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("DELETE FROM consumers WHERE space_id = ?", id).Error; err != nil {
 				return err
 			}
 		}
-		if err := tx.Where("space_id = ?", id).Delete(&model.Upstream{}).Error; err != nil {
-			return err
+
+		// Use raw SQL so GORM zero-PK Delete quirks cannot leave child rows
+		// that block the spaces foreign key.
+		for _, stmt := range []string{
+			"DELETE FROM plugins WHERE space_id = ?",
+			"DELETE FROM gateway_spaces WHERE space_id = ?",
+			"DELETE FROM space_members WHERE space_id = ?",
+		} {
+			if err := tx.Exec(stmt, id).Error; err != nil {
+				return err
+			}
 		}
-		if err := tx.Where("space_id = ?", id).Delete(&model.SpaceMember{}).Error; err != nil {
-			return err
-		}
-		res := tx.Delete(&model.Space{}, id)
+
+		res := tx.Exec("DELETE FROM spaces WHERE id = ?", id)
 		if res.Error != nil {
 			return res.Error
 		}
@@ -290,7 +316,7 @@ func (s *SpaceService) Approve(id uint64) (*model.Space, error) {
 	return s.Get(id)
 }
 
-func (s *SpaceService) Reject(id uint64) error {
+func (s *SpaceService) Reject(ctx context.Context, id uint64) error {
 	space, err := s.Get(id)
 	if err != nil {
 		return err
@@ -298,7 +324,7 @@ func (s *SpaceService) Reject(id uint64) error {
 	if space.Status != model.SpaceStatusPending {
 		return fmt.Errorf("%w: only pending space can be rejected", ErrBadRequest)
 	}
-	return s.Delete(id)
+	return s.Delete(ctx, id)
 }
 
 func (s *SpaceService) Join(spaceID uint64, userID uint64, isSystemAdmin bool) error {
