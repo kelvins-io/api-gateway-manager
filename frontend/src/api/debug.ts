@@ -5,6 +5,7 @@ export interface DebugProxyRequest {
   url: string
   headers?: Record<string, string>
   body?: string
+  body_base64?: string
   timeout_ms?: number
 }
 

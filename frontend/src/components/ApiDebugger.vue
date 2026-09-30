@@ -49,6 +49,7 @@
               <el-radio-button value="json">JSON</el-radio-button>
               <el-radio-button value="raw">Raw</el-radio-button>
               <el-radio-button value="x-www-form-urlencoded">x-www-form-urlencoded</el-radio-button>
+              <el-radio-button value="form-data">form-data</el-radio-button>
             </el-radio-group>
             <el-button v-if="bodyType === 'json'" link type="primary" @click="formatJsonBody">
               格式化 JSON
@@ -68,19 +69,18 @@
             key-placeholder="字段名"
             value-placeholder="字段值"
           />
+          <FormDataEditor v-else-if="bodyType === 'form-data'" v-model="formDataFields" />
           <el-empty v-else description="该请求无 Body" :image-size="56" />
         </el-tab-pane>
         <el-tab-pane label="Auth" name="auth">
-          <el-form label-width="100px" class="auth-form">
+          <el-form label-width="110px" class="auth-form">
             <el-form-item label="认证类型">
               <el-select v-model="authType" style="width: 220px">
                 <el-option label="无" value="none" />
-                <el-option label="API Key" value="apikey" />
-                <el-option label="Basic Auth" value="basic" />
-                <el-option label="Bearer Token" value="bearer" />
+                <el-option v-for="p in authPlugins" :key="p" :label="p" :value="p" />
               </el-select>
             </el-form-item>
-            <template v-if="authType === 'apikey'">
+            <template v-if="authType === 'key-auth'">
               <el-form-item label="Key 名称">
                 <el-input v-model="authKeyName" placeholder="apikey" />
               </el-form-item>
@@ -94,7 +94,7 @@
                 </el-radio-group>
               </el-form-item>
             </template>
-            <template v-else-if="authType === 'basic'">
+            <template v-else-if="authType === 'basic-auth'">
               <el-form-item label="用户名">
                 <el-input v-model="authUsername" />
               </el-form-item>
@@ -102,14 +102,30 @@
                 <el-input v-model="authPassword" show-password />
               </el-form-item>
             </template>
-            <template v-else-if="authType === 'bearer'">
+            <template v-else-if="authType === 'jwt'">
+              <el-form-item label="Header">
+                <el-input v-model="authJwtHeader" placeholder="Authorization" />
+              </el-form-item>
               <el-form-item label="Token">
                 <el-input
-                  v-model="authBearer"
+                  v-model="authJwtToken"
                   type="textarea"
                   :rows="3"
-                  placeholder="JWT / Access Token"
+                  placeholder="JWT Token（Authorization 头会自动加 Bearer 前缀）"
                 />
+              </el-form-item>
+            </template>
+            <template v-else-if="authType === 'hmac-auth'">
+              <el-form-item label="用户名">
+                <el-input v-model="authUsername" placeholder="hmac username" />
+              </el-form-item>
+              <el-form-item label="Secret">
+                <el-input v-model="authHmacSecret" show-password placeholder="hmac secret" />
+              </el-form-item>
+              <el-form-item label="算法">
+                <el-select v-model="authHmacAlgo" style="width: 220px">
+                  <el-option v-for="a in hmacAlgorithms" :key="a" :label="a" :value="a" />
+                </el-select>
               </el-form-item>
             </template>
           </el-form>
@@ -160,6 +176,8 @@ import type { ApiItem, ConsumerItem } from '@/types'
 import { proxyDebugRequest } from '@/api/debug'
 import KeyValueEditor from './debugger/KeyValueEditor.vue'
 import type { KvPair } from './debugger/KeyValueEditor.vue'
+import FormDataEditor from './debugger/FormDataEditor.vue'
+import type { FormDataField } from './debugger/FormDataEditor.vue'
 
 interface DebugResponse {
   status: number
@@ -182,6 +200,10 @@ const emit = defineEmits<{
 }>()
 
 const methodOptions = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
+const authPlugins = ['key-auth', 'basic-auth', 'jwt', 'hmac-auth'] as const
+type AuthType = 'none' | (typeof authPlugins)[number]
+const hmacAlgorithms = ['hmac-sha1', 'hmac-sha256', 'hmac-sha384', 'hmac-sha512'] as const
+
 const method = ref('GET')
 const url = ref('')
 const proxyMode = ref<'auto' | 'direct' | 'proxy'>('auto')
@@ -194,16 +216,20 @@ const errorMsg = ref('')
 const params = ref<KvPair[]>([emptyPair()])
 const headers = ref<KvPair[]>([emptyPair()])
 const formFields = ref<KvPair[]>([emptyPair()])
-const bodyType = ref<'none' | 'json' | 'raw' | 'x-www-form-urlencoded'>('none')
+const formDataFields = ref<FormDataField[]>([emptyFormDataField()])
+const bodyType = ref<'none' | 'json' | 'raw' | 'x-www-form-urlencoded' | 'form-data'>('none')
 const bodyText = ref('')
 
-const authType = ref<'none' | 'apikey' | 'basic' | 'bearer'>('none')
+const authType = ref<AuthType>('none')
 const authKeyName = ref('apikey')
 const authKeyValue = ref('')
 const authKeyIn = ref<'header' | 'query'>('header')
 const authUsername = ref('')
 const authPassword = ref('')
-const authBearer = ref('')
+const authJwtHeader = ref('Authorization')
+const authJwtToken = ref('')
+const authHmacSecret = ref('')
+const authHmacAlgo = ref<(typeof hmacAlgorithms)[number]>('hmac-sha256')
 
 const response = ref<DebugResponse | null>(null)
 
@@ -239,6 +265,10 @@ function emptyPair(): KvPair {
   return { enabled: true, key: '', value: '' }
 }
 
+function emptyFormDataField(): FormDataField {
+  return { enabled: true, key: '', type: 'text', value: '', file: null }
+}
+
 function onOpened() {
   resetResponse()
   hydrateFromApi()
@@ -266,6 +296,7 @@ function hydrateFromApi() {
     params.value = [emptyPair()]
     headers.value = [emptyPair()]
     formFields.value = [emptyPair()]
+    formDataFields.value = [emptyFormDataField()]
     bodyType.value = 'none'
     bodyText.value = ''
     authType.value = 'none'
@@ -307,6 +338,7 @@ function hydrateFromApi() {
   headers.value = hdrs
   params.value = [emptyPair()]
   formFields.value = [emptyPair()]
+  formDataFields.value = [emptyFormDataField()]
   bodyType.value = method.value === 'GET' || method.value === 'HEAD' ? 'none' : 'json'
   bodyText.value = bodyType.value === 'json' ? '{\n  \n}' : ''
   applyAuthFromApi(api, props.consumer || null)
@@ -348,30 +380,43 @@ function applyAuthFromApi(api: ApiItem, consumer: ConsumerItem | null) {
   authKeyIn.value = 'header'
   authUsername.value = ''
   authPassword.value = ''
-  authBearer.value = ''
+  authJwtHeader.value = 'Authorization'
+  authJwtToken.value = ''
+  authHmacSecret.value = ''
+  authHmacAlgo.value = 'hmac-sha256'
   if (!api.auth_enabled || !api.auth_plugin) return
 
   const cfg = api.auth_config || {}
   const cred = consumer?.credentials?.find((c) => c.plugin === api.auth_plugin)
+  const plugin = api.auth_plugin as AuthType
+  if (!authPlugins.includes(plugin as (typeof authPlugins)[number])) return
 
-  switch (api.auth_plugin) {
+  authType.value = plugin
+  switch (plugin) {
     case 'key-auth':
-      authType.value = 'apikey'
       authKeyName.value = firstConfigName(cfg.key_names, 'apikey')
       authKeyValue.value = cred?.config?.key || ''
-      authKeyIn.value = 'header'
+      if (cfg.key_in_header === false && cfg.key_in_query !== false) {
+        authKeyIn.value = 'query'
+      } else {
+        authKeyIn.value = 'header'
+      }
       break
     case 'basic-auth':
-      authType.value = 'basic'
       authUsername.value = cred?.config?.username || ''
       authPassword.value = cred?.config?.password || ''
       break
     case 'jwt':
-      authType.value = 'bearer'
-      authBearer.value = ''
+      authJwtHeader.value = firstConfigName(cfg.header_names, 'Authorization')
+      authJwtToken.value = ''
+      break
+    case 'hmac-auth':
+      authUsername.value = cred?.config?.username || ''
+      authHmacSecret.value = cred?.config?.secret || ''
+      authHmacAlgo.value = 'hmac-sha256'
       break
     default:
-      authType.value = 'none'
+      break
   }
 }
 
@@ -391,31 +436,81 @@ function buildFinalUrl(): string {
     if (!p.enabled || !p.key.trim()) continue
     u.searchParams.append(p.key.trim(), p.value)
   }
-  if (authType.value === 'apikey' && authKeyIn.value === 'query' && authKeyName.value.trim()) {
+  if (authType.value === 'key-auth' && authKeyIn.value === 'query' && authKeyName.value.trim()) {
     u.searchParams.set(authKeyName.value.trim(), authKeyValue.value)
   }
   return u.toString()
 }
 
-function buildHeaders(): Record<string, string> {
+async function buildHeaders(finalUrl: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
   for (const h of headers.value) {
     if (!h.enabled || !h.key.trim()) continue
     out[h.key.trim()] = h.value
   }
-  if (authType.value === 'apikey' && authKeyIn.value === 'header' && authKeyName.value.trim()) {
+  if (authType.value === 'key-auth' && authKeyIn.value === 'header' && authKeyName.value.trim()) {
     out[authKeyName.value.trim()] = authKeyValue.value
-  } else if (authType.value === 'basic') {
+  } else if (authType.value === 'basic-auth') {
     out.Authorization = `Basic ${btoa(`${authUsername.value}:${authPassword.value}`)}`
-  } else if (authType.value === 'bearer' && authBearer.value.trim()) {
-    out.Authorization = `Bearer ${authBearer.value.trim()}`
+  } else if (authType.value === 'jwt' && authJwtToken.value.trim()) {
+    const header = (authJwtHeader.value || 'Authorization').trim() || 'Authorization'
+    const token = authJwtToken.value.trim()
+    if (header.toLowerCase() === 'authorization') {
+      out[header] = token.toLowerCase().startsWith('bearer ') ? token : `Bearer ${token}`
+    } else {
+      out[header] = token
+    }
+  } else if (authType.value === 'hmac-auth') {
+    Object.assign(out, await buildHmacHeaders(finalUrl, out))
   }
   if (bodyType.value === 'json' && !hasHeader(out, 'Content-Type')) {
     out['Content-Type'] = 'application/json'
   } else if (bodyType.value === 'x-www-form-urlencoded' && !hasHeader(out, 'Content-Type')) {
     out['Content-Type'] = 'application/x-www-form-urlencoded'
   }
+  // form-data Content-Type（含 boundary）在 prepareBody 后单独设置
   return out
+}
+
+async function buildHmacHeaders(finalUrl: string, existing: Record<string, string>) {
+  if (!authUsername.value.trim()) throw new Error('hmac-auth 需要填写用户名')
+  if (!authHmacSecret.value) throw new Error('hmac-auth 需要填写 Secret')
+  const date =
+    Object.entries(existing).find(([k]) => k.toLowerCase() === 'date')?.[1] ||
+    new Date().toUTCString()
+  const u = new URL(finalUrl)
+  const requestLine = `${method.value} ${u.pathname}${u.search} HTTP/1.1`
+  const signingString = `date: ${date}\n${requestLine}`
+  const signature = await hmacSign(authHmacAlgo.value, authHmacSecret.value, signingString)
+  return {
+    Date: date,
+    Authorization: `hmac username="${authUsername.value.trim()}", algorithm="${authHmacAlgo.value}", headers="date request-line", signature="${signature}"`,
+  }
+}
+
+async function hmacSign(algo: string, secret: string, data: string): Promise<string> {
+  const hashName =
+    (
+      {
+        'hmac-sha1': 'SHA-1',
+        'hmac-sha256': 'SHA-256',
+        'hmac-sha384': 'SHA-384',
+        'hmac-sha512': 'SHA-512',
+      } as Record<string, string>
+    )[algo] || 'SHA-256'
+  const enc = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: hashName },
+    false,
+    ['sign'],
+  )
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(data))
+  const bytes = new Uint8Array(sig)
+  let binary = ''
+  for (const b of bytes) binary += String.fromCharCode(b)
+  return btoa(binary)
 }
 
 function hasHeader(headersMap: Record<string, string>, name: string) {
@@ -423,18 +518,87 @@ function hasHeader(headersMap: Record<string, string>, name: string) {
   return Object.keys(headersMap).some((k) => k.toLowerCase() === lower)
 }
 
-function buildBody(): string | undefined {
-  if (method.value === 'GET' || method.value === 'HEAD' || bodyType.value === 'none') return undefined
-  if (bodyType.value === 'json' || bodyType.value === 'raw') return bodyText.value
+interface PreparedBody {
+  direct: BodyInit | undefined
+  text?: string
+  base64?: string
+  contentType?: string
+}
+
+async function prepareBody(): Promise<PreparedBody> {
+  if (method.value === 'GET' || method.value === 'HEAD' || bodyType.value === 'none') {
+    return { direct: undefined }
+  }
+  if (bodyType.value === 'json' || bodyType.value === 'raw') {
+    return { direct: bodyText.value, text: bodyText.value }
+  }
   if (bodyType.value === 'x-www-form-urlencoded') {
     const usp = new URLSearchParams()
     for (const f of formFields.value) {
       if (!f.enabled || !f.key.trim()) continue
       usp.append(f.key.trim(), f.value)
     }
-    return usp.toString()
+    const text = usp.toString()
+    return { direct: text, text }
   }
-  return undefined
+  if (bodyType.value === 'form-data') {
+    return buildMultipartBody(formDataFields.value)
+  }
+  return { direct: undefined }
+}
+
+function escapeMultipart(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+async function buildMultipartBody(fields: FormDataField[]): Promise<PreparedBody> {
+  const boundary = `----AGMFormBoundary${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
+  const chunks: BlobPart[] = []
+  let hasPart = false
+  for (const f of fields) {
+    if (!f.enabled || !f.key.trim()) continue
+    const name = escapeMultipart(f.key.trim())
+    if (f.type === 'file') {
+      if (!f.file) continue
+      hasPart = true
+      const filename = escapeMultipart(f.file.name || 'file')
+      const mime = f.file.type || 'application/octet-stream'
+      chunks.push(
+        `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="${name}"; filename="${filename}"\r\n` +
+          `Content-Type: ${mime}\r\n\r\n`,
+      )
+      chunks.push(f.file)
+      chunks.push('\r\n')
+    } else {
+      hasPart = true
+      chunks.push(
+        `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="${name}"\r\n\r\n` +
+          `${f.value}\r\n`,
+      )
+    }
+  }
+  chunks.push(`--${boundary}--\r\n`)
+  const blob = new Blob(chunks)
+  const buffer = await blob.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  const step = 0x8000
+  for (let i = 0; i < bytes.length; i += step) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + step))
+  }
+  return {
+    direct: blob,
+    base64: hasPart || bytes.length > 0 ? btoa(binary) : undefined,
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  }
+}
+
+function dropContentType(headersMap: Record<string, string>) {
+  for (const k of Object.keys(headersMap)) {
+    if (k.toLowerCase() === 'content-type') delete headersMap[k]
+  }
 }
 
 function isCorsOrNetworkError(err: unknown): boolean {
@@ -450,7 +614,7 @@ function isCorsOrNetworkError(err: unknown): boolean {
   )
 }
 
-async function sendDirect(finalUrl: string, hdrs: Record<string, string>, body?: string) {
+async function sendDirect(finalUrl: string, hdrs: Record<string, string>, body?: BodyInit) {
   const start = performance.now()
   const res = await fetch(finalUrl, {
     method: method.value,
@@ -479,12 +643,17 @@ async function sendDirect(finalUrl: string, hdrs: Record<string, string>, body?:
   }
 }
 
-async function sendProxy(finalUrl: string, hdrs: Record<string, string>, body?: string) {
+async function sendProxy(
+  finalUrl: string,
+  hdrs: Record<string, string>,
+  prepared: PreparedBody,
+) {
   const data = await proxyDebugRequest({
     method: method.value,
     url: finalUrl,
     headers: hdrs,
-    body,
+    body: prepared.base64 ? undefined : prepared.text,
+    body_base64: prepared.base64,
     timeout_ms: 30000,
   })
   return {
@@ -502,11 +671,15 @@ async function send() {
   resetResponse()
   let finalUrl = ''
   let hdrs: Record<string, string> = {}
-  let body: string | undefined
+  let prepared: PreparedBody = { direct: undefined }
   try {
     finalUrl = buildFinalUrl()
-    hdrs = buildHeaders()
-    body = buildBody()
+    hdrs = await buildHeaders(finalUrl)
+    prepared = await prepareBody()
+    if (prepared.contentType) {
+      dropContentType(hdrs)
+      hdrs['Content-Type'] = prepared.contentType
+    }
   } catch (e) {
     errorMsg.value = e instanceof Error ? e.message : '请求参数无效'
     return
@@ -516,21 +689,21 @@ async function send() {
   try {
     const needsHostHeader = Object.keys(hdrs).some((k) => k.toLowerCase() === 'host')
     if (proxyMode.value === 'proxy' || (proxyMode.value === 'auto' && needsHostHeader)) {
-      response.value = await sendProxy(finalUrl, hdrs, body)
+      response.value = await sendProxy(finalUrl, hdrs, prepared)
       usedProxy.value = true
       return
     }
     if (proxyMode.value === 'direct') {
-      response.value = await sendDirect(finalUrl, hdrs, body)
+      response.value = await sendDirect(finalUrl, hdrs, prepared.direct)
       usedProxy.value = false
       return
     }
     try {
-      response.value = await sendDirect(finalUrl, hdrs, body)
+      response.value = await sendDirect(finalUrl, hdrs, prepared.direct)
       usedProxy.value = false
     } catch (err) {
       if (!isCorsOrNetworkError(err)) throw err
-      response.value = await sendProxy(finalUrl, hdrs, body)
+      response.value = await sendProxy(finalUrl, hdrs, prepared)
       usedProxy.value = true
       ElMessage.info('浏览器直连失败（可能是 CORS），已改用服务端代理')
     }

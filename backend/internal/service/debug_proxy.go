@@ -1,7 +1,9 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
@@ -28,11 +30,12 @@ var allowedDebugMethods = map[string]struct{}{
 }
 
 type DebugProxyInput struct {
-	Method    string            `json:"method" binding:"required"`
-	URL       string            `json:"url" binding:"required"`
-	Headers   map[string]string `json:"headers"`
-	Body      string            `json:"body"`
-	TimeoutMs int               `json:"timeout_ms"`
+	Method     string            `json:"method" binding:"required"`
+	URL        string            `json:"url" binding:"required"`
+	Headers    map[string]string `json:"headers"`
+	Body       string            `json:"body"`
+	BodyBase64 string            `json:"body_base64"`
+	TimeoutMs  int               `json:"timeout_ms"`
 }
 
 type DebugProxyResult struct {
@@ -79,8 +82,18 @@ func (s *DebugProxyService) Proxy(ctx context.Context, in DebugProxyInput) (*Deb
 	}
 
 	var bodyReader io.Reader
-	if in.Body != "" && method != http.MethodGet && method != http.MethodHead {
-		bodyReader = strings.NewReader(in.Body)
+	if method != http.MethodGet && method != http.MethodHead {
+		if strings.TrimSpace(in.BodyBase64) != "" {
+			raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(in.BodyBase64))
+			if err != nil {
+				return nil, fmt.Errorf("%w: invalid body_base64", ErrBadRequest)
+			}
+			if len(raw) > 0 {
+				bodyReader = bytes.NewReader(raw)
+			}
+		} else if in.Body != "" {
+			bodyReader = strings.NewReader(in.Body)
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), bodyReader)
