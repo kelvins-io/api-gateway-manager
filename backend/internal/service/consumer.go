@@ -407,6 +407,42 @@ func (s *ConsumerService) resyncBoundAPIs(ctx context.Context, consumerID uint64
 	return nil
 }
 
+// ReleaseGateway removes this space's consumers from a gateway that no longer has a group here.
+// Consumers still linked to an API on that gateway are left in place. Other gateways are not contacted.
+func (s *ConsumerService) ReleaseGateway(ctx context.Context, spaceID, gatewayID uint64) error {
+	var count int64
+	if err := s.db.Model(&model.APIGroup{}).Where("space_id = ? AND gateway_id = ?", spaceID, gatewayID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	var gw model.Gateway
+	if err := s.db.First(&gw, gatewayID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	var consumers []model.Consumer
+	if err := s.db.Where("space_id = ?", spaceID).Find(&consumers).Error; err != nil {
+		return err
+	}
+	for i := range consumers {
+		linked, err := s.linkedAPIGateways(consumers[i].ID)
+		if err != nil {
+			return err
+		}
+		if _, ok := linked[gatewayID]; ok {
+			continue
+		}
+		if err := s.deleteConsumerOnGateway(ctx, consumers[i].ID, gw); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ReconcileSpace pushes every consumer in the space onto the gateways currently needed
 // (space group gateways plus gateways of linked published APIs).
 func (s *ConsumerService) ReconcileSpace(ctx context.Context, spaceID uint64) error {

@@ -187,7 +187,7 @@ func (s *UpstreamService) Delete(ctx context.Context, id uint64) error {
 		return err
 	}
 	var used int64
-	if err := s.db.Model(&model.API{}).Where("upstream_id = ?", id).Count(&used).Error; err != nil {
+	if err := s.db.Model(&model.API{}).Where("service_upstream_id = ?", id).Count(&used).Error; err != nil {
 		return err
 	}
 	if used > 0 {

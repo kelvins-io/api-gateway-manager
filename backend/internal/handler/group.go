@@ -30,10 +30,6 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		mapError(c, err)
 		return
 	}
-	if err := h.consumers.ReconcileSpace(c.Request.Context(), spaceID); err != nil {
-		mapError(c, err)
-		return
-	}
 	response.OK(c, group)
 }
 
@@ -78,10 +74,6 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		mapError(c, err)
 		return
 	}
-	if err := h.consumers.ReconcileSpace(c.Request.Context(), group.SpaceID); err != nil {
-		mapError(c, err)
-		return
-	}
 	response.OK(c, group)
 }
 
@@ -99,7 +91,7 @@ func (h *GroupHandler) Delete(c *gin.Context) {
 		mapError(c, err)
 		return
 	}
-	if err := h.consumers.ReconcileSpace(c.Request.Context(), group.SpaceID); err != nil {
+	if err := h.consumers.ReleaseGateway(c.Request.Context(), group.SpaceID, group.GatewayID); err != nil {
 		mapError(c, err)
 		return
 	}
