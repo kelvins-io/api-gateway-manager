@@ -152,7 +152,6 @@
               <el-input v-model="c.config.username" placeholder="用户名" />
               <el-input v-model="c.config.secret" placeholder="secret，留空则自动生成" />
             </template>
-            <el-input v-else-if="c.plugin === 'acl'" v-model="c.config.group" placeholder="ACL 分组名" />
           </div>
           <el-button v-if="!editing" link type="primary" @click="form.credentials.push(emptyCred())">添加凭证</el-button>
         </el-form-item>
@@ -180,7 +179,7 @@ import ListPagination from '@/components/ListPagination.vue'
 import ApiDebugger from '@/components/ApiDebugger.vue'
 import { usePagination } from '@/composables/usePagination'
 
-const plugins = ['key-auth', 'basic-auth', 'jwt', 'hmac-auth', 'acl']
+const plugins = ['key-auth', 'basic-auth', 'jwt', 'hmac-auth']
 const jwtAlgorithms = ['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512', 'ES256', 'ES384']
 
 const store = useUserStore()
