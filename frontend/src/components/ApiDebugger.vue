@@ -23,6 +23,7 @@
           @keyup.enter="send"
         />
         <el-button type="primary" :loading="sending" @click="send">发送</el-button>
+        <el-button :loading="copyingCurl" @click="copyCurl">复制 Curl</el-button>
         <el-button :loading="saving" :disabled="!canSave" @click="saveHistory">保存</el-button>
         <el-button :disabled="!resolvedSpaceId" @click="openHistory">历史</el-button>
       </div>
@@ -252,6 +253,7 @@ const url = ref('')
 const proxyMode = ref<'auto' | 'direct' | 'proxy'>('auto')
 const usedProxy = ref(false)
 const sending = ref(false)
+const copyingCurl = ref(false)
 const saving = ref(false)
 const reqTab = ref('headers')
 const respTab = ref('body')
@@ -788,6 +790,86 @@ function formatSize(n: number) {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function curlSkipHeader(name: string) {
+  const lower = name.toLowerCase()
+  return lower === 'content-length' || lower === 'connection' || lower === 'transfer-encoding'
+}
+
+async function buildCurl(): Promise<string> {
+  const finalUrl = buildFinalUrl()
+  const hdrs = await buildHeaders(finalUrl)
+  const lines = [`curl -X ${method.value} ${shellQuote(finalUrl)}`]
+
+  if (authType.value === 'basic-auth') {
+    lines.push(`  -u ${shellQuote(`${authUsername.value}:${authPassword.value}`)}`)
+  }
+
+  const skipAuthHeader = authType.value === 'basic-auth'
+  for (const [name, value] of Object.entries(hdrs)) {
+    if (!name.trim() || curlSkipHeader(name)) continue
+    if (skipAuthHeader && name.toLowerCase() === 'authorization') continue
+    if (bodyType.value === 'form-data' && name.toLowerCase() === 'content-type') continue
+    lines.push(`  -H ${shellQuote(`${name}: ${value}`)}`)
+  }
+
+  if (method.value !== 'GET' && method.value !== 'HEAD' && bodyType.value !== 'none') {
+    if (bodyType.value === 'form-data') {
+      for (const f of formDataFields.value) {
+        if (!f.enabled || !f.key.trim()) continue
+        if (f.type === 'file') {
+          const filename = f.file?.name || 'file'
+          lines.push(`  -F ${shellQuote(`${f.key.trim()}=@${filename}`)}`)
+        } else {
+          lines.push(`  -F ${shellQuote(`${f.key.trim()}=${f.value}`)}`)
+        }
+      }
+    } else if (bodyType.value === 'x-www-form-urlencoded') {
+      const usp = new URLSearchParams()
+      for (const f of formFields.value) {
+        if (!f.enabled || !f.key.trim()) continue
+        usp.append(f.key.trim(), f.value)
+      }
+      lines.push(`  --data-raw ${shellQuote(usp.toString())}`)
+    } else if (bodyText.value) {
+      lines.push(`  --data-raw ${shellQuote(bodyText.value)}`)
+    }
+  }
+
+  return lines.join(' \\\n')
+}
+
+async function copyToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const el = document.createElement('textarea')
+  el.value = text
+  el.style.position = 'fixed'
+  el.style.left = '-9999px'
+  document.body.appendChild(el)
+  el.select()
+  document.execCommand('copy')
+  document.body.removeChild(el)
+}
+
+async function copyCurl() {
+  copyingCurl.value = true
+  try {
+    const text = await buildCurl()
+    await copyToClipboard(text)
+    ElMessage.success('Curl 已复制到剪贴板')
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : '复制失败，请手动复制')
+  } finally {
+    copyingCurl.value = false
+  }
 }
 
 function formatTime(raw: string) {
