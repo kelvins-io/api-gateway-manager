@@ -1,0 +1,3258 @@
+openapi: 3.0.3
+info:
+  title: API Gateway Manager
+  version: 1.0.0
+  description: |
+    基于 Kong 的 API 网关管理系统 HTTP API。
+
+    成功响应统一为 `{ "code": 0, "message": "ok", "data": ... }`。无业务数据时省略 `data`。
+    失败响应为 `{ "code": <HTTP 状态码>, "message": "..." }`，HTTP 状态与 `code` 一致：
+    400 参数错误、401 未登录或 token 无效、403 权限不足、404 资源不存在、409 冲突、500 服务器错误。
+
+    除 `/health`、`/api/v1/auth/register`、`/api/v1/auth/login` 外，均需 `Authorization: Bearer <JWT>`。
+    `system_admin` 可绕过空间成员校验。空间写操作（创建分组、发布 API、管理成员/上游/消费者/插件等）需要 `space_admin`。
+    服务对任意路径的 `OPTIONS` 预检返回 204，并允许 `Authorization`、`Content-Type`。
+
+    默认监听 `http://localhost:10000`。
+servers:
+  - url: http://localhost:10000
+    description: 本地后端
+tags:
+  - name: Health
+    description: 健康检查
+  - name: Auth
+    description: 注册、登录与当前用户
+  - name: Space
+    description: 空间与成员
+  - name: Gateway
+    description: Kong 网关
+  - name: Group
+    description: API 分组
+  - name: API
+    description: API 定义、发布与版本
+  - name: Market
+    description: API 市场
+  - name: Upstream
+    description: 空间级 Upstream
+  - name: Consumer
+    description: 空间级 Consumer
+  - name: Plugin
+    description: 空间级插件模板
+  - name: Debug
+    description: REST 调试代理与调试历史
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: 健康检查
+      operationId: health
+      security: []
+      responses:
+        "200":
+          description: 服务可用
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Success"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/HealthData"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: 注册
+      description: 首个注册用户角色为 `system_admin`，之后为 `member`。用户名已存在时返回 409。
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/AuthResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: 登录
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/AuthResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: 当前用户
+      operationId: getMe
+      responses:
+        "200":
+          $ref: "#/components/responses/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces:
+    get:
+      tags: [Space]
+      summary: 空间列表
+      description: 系统管理员返回全部空间；其他用户只返回自己已加入或申请中的空间，并带上 `member_status`。
+      operationId: listSpaces
+      responses:
+        "200":
+          $ref: "#/components/responses/SpaceList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      tags: [Space]
+      summary: 创建空间
+      description: |
+        系统管理员创建的空间状态为 `active`，其他用户为 `pending`，需系统管理员审批后生效。
+        `prefix` 形如 `/order` 或 `/team/order`，全局唯一，创建后不可修改。创建者成为该空间的 `space_admin`。
+      operationId: createSpace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSpaceRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Space"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/available:
+    get:
+      tags: [Space]
+      summary: 可加入的空间
+      description: 返回状态为 `active` 且当前用户尚未加入、也未申请的空间。
+      operationId: listAvailableSpaces
+      responses:
+        "200":
+          $ref: "#/components/responses/SpaceList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+    get:
+      tags: [Space]
+      summary: 空间详情
+      description: 需要该空间的有效成员身份。
+      operationId: getSpace
+      responses:
+        "200":
+          $ref: "#/components/responses/Space"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    put:
+      tags: [Space]
+      summary: 更新空间
+      description: 需要空间管理员。只更新名称和描述，不修改路径前缀。
+      operationId: updateSpace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSpaceRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Space"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    delete:
+      tags: [Space]
+      summary: 删除空间
+      description: 需要空间管理员。空间下仍有分组、Upstream、Consumer 或 Plugin 时返回 409。
+      operationId: deleteSpace
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/approve:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+    post:
+      tags: [Space]
+      summary: 审批通过空间
+      description: 需要系统管理员。通过后空间状态变为 `active`。
+      operationId: approveSpace
+      responses:
+        "200":
+          $ref: "#/components/responses/Space"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/reject:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+    post:
+      tags: [Space]
+      summary: 拒绝空间申请
+      description: 需要系统管理员。
+      operationId: rejectSpace
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/join:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+    post:
+      tags: [Space]
+      summary: 申请加入空间
+      description: 空间必须为 `active`。普通用户生成 `pending` 成员申请；系统管理员直接以 `space_admin` 加入。
+      operationId: joinSpace
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/members:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+    get:
+      tags: [Space]
+      summary: 成员列表
+      description: 需要空间成员。
+      operationId: listSpaceMembers
+      responses:
+        "200":
+          $ref: "#/components/responses/SpaceMemberList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      tags: [Space]
+      summary: 添加成员
+      description: 需要空间管理员。直接将用户加为有效成员；若该用户已有待审批申请，则按本次角色通过。
+      operationId: addSpaceMember
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddMemberRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/members/candidates:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+    get:
+      tags: [Space]
+      summary: 可添加的用户
+      description: 需要空间管理员。返回尚未属于该空间的用户。
+      operationId: listSpaceMemberCandidates
+      responses:
+        "200":
+          $ref: "#/components/responses/UserList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/members/{uid}/approve:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+      - $ref: "#/components/parameters/UserId"
+    post:
+      tags: [Space]
+      summary: 通过成员申请
+      description: 需要空间管理员。
+      operationId: approveSpaceMember
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/members/{uid}/reject:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+      - $ref: "#/components/parameters/UserId"
+    post:
+      tags: [Space]
+      summary: 拒绝成员申请
+      description: 需要空间管理员。
+      operationId: rejectSpaceMember
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/members/{uid}:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+      - $ref: "#/components/parameters/UserId"
+    delete:
+      tags: [Space]
+      summary: 移除成员
+      description: 需要空间管理员。
+      operationId: removeSpaceMember
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/members/{uid}/role:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [Space]
+      summary: 修改成员角色
+      description: 需要空间管理员。
+      operationId: updateSpaceMemberRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMemberRoleRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/groups:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+    get:
+      tags: [Group]
+      summary: 分组列表
+      description: 需要空间成员。
+      operationId: listGroups
+      responses:
+        "200":
+          $ref: "#/components/responses/GroupList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      tags: [Group]
+      summary: 创建分组
+      description: 需要空间管理员。网关必须是共享网关，或已授权给该空间的私有网关。同一空间内分组名唯一。
+      operationId: createGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGroupRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Group"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/gateway-options:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+    get:
+      tags: [Gateway]
+      summary: 空间可用网关
+      description: 需要空间成员。返回共享网关，以及已授权给该空间的私有网关。不包含 Admin API 地址。
+      operationId: listGatewayOptionsForSpace
+      responses:
+        "200":
+          $ref: "#/components/responses/GatewayOptionList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/gateways-options:
+    get:
+      tags: [Gateway]
+      summary: 共享网关选项
+      description: 只返回共享网关的 id、名称和网络区域，不包含 Admin API。绑定分组时优先使用空间维度的 `/spaces/{id}/gateway-options`。
+      operationId: listGatewayOptions
+      responses:
+        "200":
+          $ref: "#/components/responses/GatewayOptionList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/gateways:
+    get:
+      tags: [Gateway]
+      summary: 网关列表
+      description: 需要系统管理员。
+      operationId: listGateways
+      responses:
+        "200":
+          $ref: "#/components/responses/GatewayList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      tags: [Gateway]
+      summary: 创建网关
+      description: 需要系统管理员。创建前会探测 Admin API。`domain` 必须是 `ip:port` 或 `域名:port`。`shared` 省略时默认为 true。
+      operationId: createGateway
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGatewayRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Gateway"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/gateways/probe:
+    post:
+      tags: [Gateway]
+      summary: 探测 Admin API
+      description: 需要系统管理员。确认 Kong Admin API 可访问。
+      operationId: probeGateway
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProbeGatewayRequest"
+      responses:
+        "200":
+          description: 探测成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Success"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          ok:
+                            type: boolean
+                            example: true
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/gateways/{id}:
+    parameters:
+      - $ref: "#/components/parameters/GatewayId"
+    get:
+      tags: [Gateway]
+      summary: 网关详情
+      description: 需要系统管理员。
+      operationId: getGateway
+      responses:
+        "200":
+          $ref: "#/components/responses/Gateway"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    put:
+      tags: [Gateway]
+      summary: 更新网关
+      description: 需要系统管理员。变更 Admin API 时会重新探测。
+      operationId: updateGateway
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGatewayRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Gateway"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    delete:
+      tags: [Gateway]
+      summary: 删除网关
+      description: 需要系统管理员。仍被 API 分组使用时返回 409。
+      operationId: deleteGateway
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/gateways/{id}/unauthorized-spaces:
+    parameters:
+      - $ref: "#/components/parameters/GatewayId"
+    get:
+      tags: [Gateway]
+      summary: 尚未授权的空间
+      description: 需要系统管理员。仅私有网关可用，返回尚未授权且状态为 `active` 的空间。
+      operationId: listUnauthorizedSpaces
+      responses:
+        "200":
+          $ref: "#/components/responses/SpaceList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/gateways/{id}/authorize-spaces:
+    parameters:
+      - $ref: "#/components/parameters/GatewayId"
+    post:
+      tags: [Gateway]
+      summary: 授权空间使用私有网关
+      description: 需要系统管理员。共享网关不需要授权。空间必须处于 `active`。
+      operationId: authorizeGatewaySpaces
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthorizeSpacesRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/groups/{gid}:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    get:
+      tags: [Group]
+      summary: 分组详情
+      description: 需要所属空间的成员身份。
+      operationId: getGroup
+      responses:
+        "200":
+          $ref: "#/components/responses/Group"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    put:
+      tags: [Group]
+      summary: 更新分组
+      description: 需要所属空间的管理员。只修改名称。
+      operationId: updateGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGroupRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Group"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    delete:
+      tags: [Group]
+      summary: 删除分组
+      description: 需要所属空间的管理员。分组下仍有 API 时返回 409。删除后会释放该分组网关上不再使用的 Consumer。
+      operationId: deleteGroup
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/groups/{gid}/apis:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    get:
+      tags: [API]
+      summary: 分组下的 API 列表
+      description: 需要所属空间的成员身份。返回结果包含插件、消费者和分组。
+      operationId: listApisByGroup
+      responses:
+        "200":
+          $ref: "#/components/responses/APIList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      tags: [API]
+      summary: 创建 API
+      description: |
+        需要所属空间的管理员。新建 API 状态为 `draft`。
+        访问路径会自动加上空间前缀。同一分组内名称唯一。
+        `plugin_ids` 会绑定插件。消费者关联请通过 Consumer 的 `api_ids` 或市场关联接口完成。
+      operationId: createApi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAPIRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/API"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/groups/{gid}/apis/import-openapi:
+    parameters:
+      - $ref: "#/components/parameters/GroupId"
+    post:
+      tags: [API]
+      summary: 从 OpenAPI 文件导入 API
+      description: |
+        需要所属空间的管理员。上传 OpenAPI 3 或 Swagger 2 的 JSON/YAML，最大 8 MiB。
+        `dry_run` 为 true/1/yes 时只返回解析结果，不写入。同名 API 按更新处理。
+      operationId: importOpenAPI
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ImportOpenAPIRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/ImportOpenAPI"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/apis:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+    get:
+      tags: [API]
+      summary: 空间内已开启认证的 API
+      description: 需要空间成员。只返回 `auth_enabled=true` 的 API，供消费者关联时选择。
+      operationId: listApisBySpace
+      responses:
+        "200":
+          $ref: "#/components/responses/APIList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/apis/{aid}:
+    parameters:
+      - $ref: "#/components/parameters/ApiId"
+    get:
+      tags: [API]
+      summary: API 详情
+      description: 需要所属空间的成员身份。包含插件、消费者凭证和分组网关。
+      operationId: getApi
+      responses:
+        "200":
+          $ref: "#/components/responses/API"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    put:
+      tags: [API]
+      summary: 更新 API
+      description: |
+        需要所属空间的管理员。认证开关和认证插件类型创建后不可更改；已开启认证时只能更新 `auth_config`。
+        传入 `plugin_ids` 会整体替换插件绑定。路由与上游配置先写入数据库，再次发布或切换版本后才会更新 Kong。
+        已发布的 API 在变更插件绑定或认证配置时，会同步插件到 Kong。
+      operationId: updateApi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAPIRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/API"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    delete:
+      tags: [API]
+      summary: 删除 API
+      description: 需要所属空间的管理员。已发布或已关联 Consumer 的 API 返回 409。
+      operationId: deleteApi
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/apis/{aid}/publish:
+    parameters:
+      - $ref: "#/components/parameters/ApiId"
+    post:
+      tags: [API]
+      summary: 发布 API
+      description: 需要所属空间的管理员。将当前配置发布到分组绑定的 Kong，并生成递增版本号 `v1`、`v2`……
+      operationId: publishApi
+      responses:
+        "200":
+          $ref: "#/components/responses/API"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/apis/{aid}/offline:
+    parameters:
+      - $ref: "#/components/parameters/ApiId"
+    post:
+      tags: [API]
+      summary: 下线 API
+      description: 需要所属空间的管理员。已关联 Consumer 时返回 409。下线后状态为 `offline`，并取消市场分享。
+      operationId: offlineApi
+      responses:
+        "200":
+          $ref: "#/components/responses/API"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/apis/{aid}/share:
+    parameters:
+      - $ref: "#/components/parameters/ApiId"
+    post:
+      tags: [API]
+      summary: 分享到市场
+      description: 需要所属空间的管理员。仅 `published` 状态可分享。
+      operationId: shareApi
+      responses:
+        "200":
+          $ref: "#/components/responses/API"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/apis/{aid}/unshare:
+    parameters:
+      - $ref: "#/components/parameters/ApiId"
+    post:
+      tags: [API]
+      summary: 取消市场分享
+      description: 需要所属空间的管理员。
+      operationId: unshareApi
+      responses:
+        "200":
+          $ref: "#/components/responses/API"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/apis/{aid}/switch-version:
+    parameters:
+      - $ref: "#/components/parameters/ApiId"
+    post:
+      tags: [API]
+      summary: 切换已发布版本
+      description: 需要所属空间的管理员。按历史快照回写配置并同步 Kong。
+      operationId: switchApiVersion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SwitchVersionRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/API"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/apis/{aid}/versions:
+    parameters:
+      - $ref: "#/components/parameters/ApiId"
+    get:
+      tags: [API]
+      summary: 版本列表
+      description: 需要所属空间的成员身份。
+      operationId: listApiVersions
+      responses:
+        "200":
+          $ref: "#/components/responses/APIVersionList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/apis/{aid}/versions/{version}:
+    parameters:
+      - $ref: "#/components/parameters/ApiId"
+      - $ref: "#/components/parameters/Version"
+    delete:
+      tags: [API]
+      summary: 删除历史版本
+      description: 需要所属空间的管理员。API 处于已发布且该版本是当前版本时返回 409。
+      operationId: deleteApiVersion
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/market/apis:
+    get:
+      tags: [Market]
+      summary: 市场 API 列表
+      description: 返回已分享且状态为 `published` 的 API，包含分组、网关和空间。
+      operationId: listMarketApis
+      responses:
+        "200":
+          $ref: "#/components/responses/APIList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/market/apis/{aid}/linkable-consumers:
+    parameters:
+      - $ref: "#/components/parameters/ApiId"
+    get:
+      tags: [Market]
+      summary: 可关联到市场 API 的消费者
+      description: |
+        API 必须已分享且已发布，并开启了认证。
+        返回当前用户作为空间管理员所辖空间中、具备相同认证插件、且尚未关联该 API 的 Consumer。系统管理员可见全部活动空间。
+      operationId: listMarketLinkableConsumers
+      responses:
+        "200":
+          $ref: "#/components/responses/ConsumerList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/market/apis/{aid}/link-consumers:
+    parameters:
+      - $ref: "#/components/parameters/ApiId"
+    post:
+      tags: [Market]
+      summary: 关联消费者到市场 API
+      description: 调用者必须是这些 Consumer 所属空间的管理员（系统管理员除外）。Consumer 需具备与 API 相同的认证凭证。
+      operationId: linkMarketConsumers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LinkMarketConsumersRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/upstreams:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+    get:
+      tags: [Upstream]
+      summary: Upstream 列表
+      description: 需要空间成员。包含 targets。
+      operationId: listUpstreams
+      responses:
+        "200":
+          $ref: "#/components/responses/UpstreamList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      tags: [Upstream]
+      summary: 创建 Upstream
+      description: 需要空间管理员。名称在空间内唯一，匹配 `^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$`。
+      operationId: createUpstream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertUpstreamRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Upstream"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/upstreams/{upid}:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+      - $ref: "#/components/parameters/UpstreamId"
+    put:
+      tags: [Upstream]
+      summary: 更新 Upstream
+      description: 需要空间管理员。更新后同步到已绑定该 Upstream 的网关。
+      operationId: updateUpstream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertUpstreamRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Upstream"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    delete:
+      tags: [Upstream]
+      summary: 删除 Upstream
+      description: 需要空间管理员。仍被 API 引用时返回 409。
+      operationId: deleteUpstream
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/consumers:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+    get:
+      tags: [Consumer]
+      summary: Consumer 列表
+      description: 需要空间成员。包含凭证以及已关联 API。
+      operationId: listConsumers
+      responses:
+        "200":
+          $ref: "#/components/responses/ConsumerList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      tags: [Consumer]
+      summary: 创建 Consumer
+      description: |
+        需要空间管理员。用户名在空间内唯一，匹配 `^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`。
+        `api_ids` 会替换该 Consumer 与本空间 API 的关联，并同步到对应网关。
+      operationId: createConsumer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertConsumerRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Consumer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/consumers/sync:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+    post:
+      tags: [Consumer]
+      summary: 将空间 Consumer 同步到网关
+      description: 需要空间管理员。按空间当前使用的网关重新对账 Kong Consumer。
+      operationId: syncConsumers
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/consumers/{cid}:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+      - $ref: "#/components/parameters/ConsumerId"
+    put:
+      tags: [Consumer]
+      summary: 更新 Consumer
+      description: 需要空间管理员。凭证和 `api_ids` 按请求体整体替换。
+      operationId: updateConsumer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertConsumerRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Consumer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    delete:
+      tags: [Consumer]
+      summary: 删除 Consumer
+      description: 需要空间管理员。仍关联 API 时返回 409。删除时会从已同步的网关移除。
+      operationId: deleteConsumer
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/plugins:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+    get:
+      tags: [Plugin]
+      summary: 插件列表
+      description: 需要空间成员。每项包含已绑定的 API 数量 `api_count`。
+      operationId: listPlugins
+      responses:
+        "200":
+          $ref: "#/components/responses/PluginList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      tags: [Plugin]
+      summary: 创建插件模板
+      description: 需要空间管理员。名称在空间内唯一。`enabled` 省略时为 true。
+      operationId: createPlugin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertPluginRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Plugin"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/plugins/{pid}:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+      - $ref: "#/components/parameters/PluginId"
+    put:
+      tags: [Plugin]
+      summary: 更新插件模板
+      description: 需要空间管理员。插件类型不可修改。已发布且绑定该插件的 API 会把插件配置同步到 Kong。
+      operationId: updatePlugin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertPluginRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Plugin"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    delete:
+      tags: [Plugin]
+      summary: 删除插件模板
+      description: 需要空间管理员。仍关联 API 时返回 409。
+      operationId: deletePlugin
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/plugins/{pid}/apis:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+      - $ref: "#/components/parameters/PluginId"
+    get:
+      tags: [Plugin]
+      summary: 插件已绑定的 API
+      description: 需要空间成员。
+      operationId: listPluginApis
+      responses:
+        "200":
+          $ref: "#/components/responses/APIList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/debug-histories:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+    get:
+      tags: [Debug]
+      summary: 调试历史列表
+      description: 需要空间成员。按 id 倒序，最多 200 条，包含创建人。
+      operationId: listDebugHistories
+      responses:
+        "200":
+          $ref: "#/components/responses/DebugHistoryList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    post:
+      tags: [Debug]
+      summary: 保存调试历史
+      description: 需要空间成员。标题省略时使用 `METHOD URL`。请求快照最大 512 KiB。
+      operationId: createDebugHistory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDebugHistoryRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/DebugHistory"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/spaces/{id}/debug-histories/{hid}:
+    parameters:
+      - $ref: "#/components/parameters/SpaceId"
+      - $ref: "#/components/parameters/HistoryId"
+    get:
+      tags: [Debug]
+      summary: 调试历史详情
+      description: 需要空间成员。
+      operationId: getDebugHistory
+      responses:
+        "200":
+          $ref: "#/components/responses/DebugHistory"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+    delete:
+      tags: [Debug]
+      summary: 删除调试历史
+      description: 创建者、空间管理员或系统管理员可删除。
+      operationId: deleteDebugHistory
+      responses:
+        "200":
+          $ref: "#/components/responses/Empty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/v1/debug/proxy:
+    post:
+      tags: [Debug]
+      summary: 代理调试请求
+      description: |
+        由后端代发 HTTP/HTTPS 请求，绕过浏览器 CORS。
+        方法限于 GET、POST、PUT、PATCH、DELETE、HEAD、OPTIONS。
+        超时默认 30 秒，最大 120 秒。响应体最大 2 MiB，超出部分截断并将 `truncated` 置为 true。
+      operationId: debugProxy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DebugProxyRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/DebugProxy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "登录或注册返回的 JWT，请求头格式为 Authorization: Bearer <token>。"
+
+  parameters:
+    SpaceId:
+      name: id
+      in: path
+      required: true
+      description: 空间 ID
+      schema:
+        $ref: "#/components/schemas/Id"
+    GatewayId:
+      name: id
+      in: path
+      required: true
+      description: 网关 ID
+      schema:
+        $ref: "#/components/schemas/Id"
+    GroupId:
+      name: gid
+      in: path
+      required: true
+      description: 分组 ID
+      schema:
+        $ref: "#/components/schemas/Id"
+    ApiId:
+      name: aid
+      in: path
+      required: true
+      description: API ID
+      schema:
+        $ref: "#/components/schemas/Id"
+    UserId:
+      name: uid
+      in: path
+      required: true
+      description: 用户 ID
+      schema:
+        $ref: "#/components/schemas/Id"
+    UpstreamId:
+      name: upid
+      in: path
+      required: true
+      description: Upstream ID
+      schema:
+        $ref: "#/components/schemas/Id"
+    ConsumerId:
+      name: cid
+      in: path
+      required: true
+      description: Consumer ID
+      schema:
+        $ref: "#/components/schemas/Id"
+    PluginId:
+      name: pid
+      in: path
+      required: true
+      description: 插件 ID
+      schema:
+        $ref: "#/components/schemas/Id"
+    HistoryId:
+      name: hid
+      in: path
+      required: true
+      description: 调试历史 ID
+      schema:
+        $ref: "#/components/schemas/Id"
+    Version:
+      name: version
+      in: path
+      required: true
+      description: 版本号，例如 v1
+      schema:
+        type: string
+        example: v1
+
+  responses:
+    Empty:
+      description: 成功，无 data
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Success"
+    AuthResult:
+      description: 登录或注册成功
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/AuthResult"
+    User:
+      description: 用户
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/User"
+    UserList:
+      description: 用户列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/User"
+    Space:
+      description: 空间
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Space"
+    SpaceList:
+      description: 空间列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Space"
+    SpaceMemberList:
+      description: 成员列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SpaceMember"
+    Gateway:
+      description: 网关
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Gateway"
+    GatewayList:
+      description: 网关列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Gateway"
+    GatewayOptionList:
+      description: 网关选项
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/GatewayOption"
+    Group:
+      description: 分组
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/APIGroup"
+    GroupList:
+      description: 分组列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/APIGroup"
+    API:
+      description: API
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/API"
+    APIList:
+      description: API 列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/API"
+    APIVersionList:
+      description: 版本列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/APIVersion"
+    ImportOpenAPI:
+      description: 导入结果
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ImportOpenAPIResult"
+    Upstream:
+      description: Upstream
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Upstream"
+    UpstreamList:
+      description: Upstream 列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Upstream"
+    Consumer:
+      description: Consumer
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Consumer"
+    ConsumerList:
+      description: Consumer 列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Consumer"
+    Plugin:
+      description: 插件
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Plugin"
+    PluginList:
+      description: 插件列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Plugin"
+    DebugHistory:
+      description: 调试历史
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DebugHistory"
+    DebugHistoryList:
+      description: 调试历史列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DebugHistory"
+    DebugProxy:
+      description: 调试代理结果
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Success"
+              - type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/DebugProxyResult"
+    BadRequest:
+      description: 参数错误
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+          example:
+            code: 400
+            message: bad request
+    Unauthorized:
+      description: 未登录或 token 无效
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+          example:
+            code: 401
+            message: invalid token
+    Forbidden:
+      description: 权限不足
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+          example:
+            code: 403
+            message: forbidden
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+          example:
+            code: 404
+            message: not found
+    Conflict:
+      description: 冲突，例如名称已存在或状态不允许
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+          example:
+            code: 409
+            message: conflict
+    ServerError:
+      description: 服务器错误
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+          example:
+            code: 500
+            message: internal error
+
+  schemas:
+    Id:
+      type: integer
+      format: int64
+      minimum: 1
+    Success:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: ok
+    ErrorBody:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: integer
+          description: 与 HTTP 状态码一致
+        message:
+          type: string
+    HealthData:
+      type: object
+      properties:
+        status:
+          type: string
+          example: up
+    AuthResult:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+    User:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        username:
+          type: string
+        role:
+          type: string
+          enum: [system_admin, member]
+          description: 全局角色。空间内角色见 SpaceMember.role
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Space:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        name:
+          type: string
+        description:
+          type: string
+        prefix:
+          type: string
+          description: 路径前缀，例如 /order
+          example: /order
+        owner_id:
+          $ref: "#/components/schemas/Id"
+        status:
+          type: string
+          enum: [pending, active]
+        group_count:
+          type: integer
+          format: int64
+        upstream_count:
+          type: integer
+          format: int64
+        consumer_count:
+          type: integer
+          format: int64
+        plugin_count:
+          type: integer
+          format: int64
+        member_status:
+          type: string
+          enum: [pending, active]
+          description: 当前用户在该空间的成员状态，仅列表接口可能返回
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    SpaceMember:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        space_id:
+          $ref: "#/components/schemas/Id"
+        user_id:
+          $ref: "#/components/schemas/Id"
+        role:
+          type: string
+          enum: [space_admin, member]
+        status:
+          type: string
+          enum: [pending, active]
+        user:
+          $ref: "#/components/schemas/User"
+        space:
+          $ref: "#/components/schemas/Space"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Gateway:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        name:
+          type: string
+        admin_api:
+          type: string
+          description: Kong Admin API 地址
+          example: http://127.0.0.1:8001
+        domain:
+          type: string
+          description: 网关入口，ip:port 或域名:port
+          example: gateway.example.com:8000
+        network_zone:
+          type: string
+          enum: ["内网", DMZ]
+        shared:
+          type: boolean
+          description: true 为共享网关，所有空间可用；false 需按空间授权
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    GatewayOption:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        name:
+          type: string
+        network_zone:
+          type: string
+          enum: ["内网", DMZ]
+    APIGroup:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        space_id:
+          $ref: "#/components/schemas/Id"
+        gateway_id:
+          $ref: "#/components/schemas/Id"
+        name:
+          type: string
+        gateway:
+          $ref: "#/components/schemas/Gateway"
+        space:
+          $ref: "#/components/schemas/Space"
+        api_count:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    API:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        group_id:
+          $ref: "#/components/schemas/Id"
+        name:
+          type: string
+        access_path:
+          type: string
+          description: 逗号分隔的访问路径，正则路径以 ~ 开头
+        access_methods:
+          type: string
+          description: 逗号分隔的大写 HTTP 方法
+          example: GET,POST
+        access_protocols:
+          type: string
+          description: 逗号分隔，取值为 http、https、grpc、grpcs
+          example: http
+        access_hosts:
+          type: string
+        access_headers:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          nullable: true
+        upstream_url:
+          type: string
+        service_protocol:
+          type: string
+          enum: [http, https, grpc, grpcs]
+        service_host_kind:
+          type: string
+          enum: [direct, upstream]
+        service_host:
+          type: string
+          description: direct 时为上游主机名；upstream 时为 Kong upstream 名称
+        service_upstream_id:
+          $ref: "#/components/schemas/Id"
+        service_port:
+          type: integer
+        service_path:
+          type: string
+        service_retries:
+          type: integer
+        service_connect_timeout:
+          type: integer
+          description: 毫秒
+        service_write_timeout:
+          type: integer
+          description: 毫秒
+        service_read_timeout:
+          type: integer
+          description: 毫秒
+        access_strip_path:
+          type: boolean
+        request_buffering:
+          type: boolean
+        response_buffering:
+          type: boolean
+        auth_enabled:
+          type: boolean
+        auth_plugin:
+          type: string
+          enum: ["", key-auth, basic-auth, jwt, hmac-auth]
+        auth_config:
+          type: object
+          additionalProperties: true
+          nullable: true
+        status:
+          type: string
+          enum: [draft, published, offline]
+        current_version:
+          type: string
+          example: v1
+        shared:
+          type: boolean
+          description: 是否分享到 API 市场
+        kong_service_id:
+          type: string
+        kong_route_id:
+          type: string
+        group:
+          $ref: "#/components/schemas/APIGroup"
+        plugins:
+          type: array
+          items:
+            $ref: "#/components/schemas/Plugin"
+        consumers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Consumer"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    APIVersion:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        api_id:
+          $ref: "#/components/schemas/Id"
+        version:
+          type: string
+          example: v1
+        config_snapshot:
+          $ref: "#/components/schemas/APIConfigSnapshot"
+        published_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    APIConfigSnapshot:
+      type: object
+      description: 发布时保存的配置快照。旧数据可能还带有 path、methods、protocol、host 等历史字段。
+      properties:
+        name:
+          type: string
+        access_path:
+          type: string
+        access_methods:
+          type: string
+        access_protocols:
+          type: string
+        access_hosts:
+          type: string
+        access_headers:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        service_protocol:
+          type: string
+        service_host_kind:
+          type: string
+        service_host:
+          type: string
+        service_upstream_id:
+          type: integer
+          format: int64
+        kong_host:
+          type: string
+        service_port:
+          type: integer
+        service_path:
+          type: string
+        service_retries:
+          type: integer
+        service_connect_timeout:
+          type: integer
+        service_write_timeout:
+          type: integer
+        service_read_timeout:
+          type: integer
+        access_strip_path:
+          type: boolean
+        request_buffering:
+          type: boolean
+        response_buffering:
+          type: boolean
+        plugins:
+          type: array
+          items:
+            $ref: "#/components/schemas/PluginSnapshot"
+    PluginSnapshot:
+      type: object
+      properties:
+        name:
+          type: string
+        plugin:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+    Plugin:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        space_id:
+          $ref: "#/components/schemas/Id"
+        name:
+          type: string
+        plugin:
+          $ref: "#/components/schemas/PluginKind"
+        config:
+          type: object
+          additionalProperties: true
+        enabled:
+          type: boolean
+        api_count:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PluginKind:
+      type: string
+      description: Kong Gateway 3.4.2 OSS 内置插件及项目支持的扩展插件
+      enum:
+        - acl
+        - acme
+        - aws-lambda
+        - azure-functions
+        - basic-auth
+        - bot-detection
+        - correlation-id
+        - cors
+        - datadog
+        - file-log
+        - grpc-gateway
+        - grpc-gateway-advanced
+        - grpc-web
+        - grpc-web-advanced
+        - hmac-auth
+        - http-log
+        - ip-restriction
+        - jwt
+        - key-auth
+        - ldap-auth
+        - loggly
+        - oauth2
+        - opentelemetry
+        - post-function
+        - pre-function
+        - prometheus
+        - proxy-cache
+        - proxy-cache-advanced
+        - rate-limiting
+        - request-gzip
+        - request-size-limiting
+        - request-termination
+        - request-transformer
+        - response-gzip
+        - response-ratelimiting
+        - response-ratelimiting-advanced
+        - response-transformer
+        - session
+        - statsd
+        - syslog
+        - tcp-log
+        - udp-log
+        - zipkin
+    Upstream:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        space_id:
+          $ref: "#/components/schemas/Id"
+        name:
+          type: string
+        algorithm:
+          type: string
+          enum: [round-robin, consistent-hashing, least-connections, latency]
+        slots:
+          type: integer
+        hash_on:
+          type: string
+        hash_fallback:
+          type: string
+        hash_on_header:
+          type: string
+        hash_fallback_header:
+          type: string
+        hash_on_cookie:
+          type: string
+        hash_on_cookie_path:
+          type: string
+        hash_on_query_arg:
+          type: string
+        hash_fallback_query_arg:
+          type: string
+        hash_on_uri_capture:
+          type: string
+        hash_fallback_uri_capture:
+          type: string
+        healthchecks:
+          $ref: "#/components/schemas/HealthInput"
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpstreamTarget"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    UpstreamTarget:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        upstream_id:
+          $ref: "#/components/schemas/Id"
+        target:
+          type: string
+          description: host:port
+          example: 10.0.0.1:8080
+        weight:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Consumer:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        space_id:
+          $ref: "#/components/schemas/Id"
+        username:
+          type: string
+        custom_id:
+          type: string
+        credentials:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConsumerCredential"
+        apis:
+          type: array
+          items:
+            $ref: "#/components/schemas/API"
+        space:
+          $ref: "#/components/schemas/Space"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ConsumerCredential:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        consumer_id:
+          $ref: "#/components/schemas/Id"
+        plugin:
+          type: string
+          enum: [key-auth, basic-auth, jwt, hmac-auth, acl]
+        config:
+          type: object
+          additionalProperties:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    DebugHistory:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        space_id:
+          $ref: "#/components/schemas/Id"
+        created_by:
+          $ref: "#/components/schemas/Id"
+        api_id:
+          $ref: "#/components/schemas/Id"
+        api_name:
+          type: string
+        title:
+          type: string
+        method:
+          type: string
+        url:
+          type: string
+        request:
+          type: object
+          additionalProperties: true
+          description: 调试器请求快照
+        creator:
+          $ref: "#/components/schemas/User"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    DebugProxyResult:
+      type: object
+      properties:
+        status:
+          type: integer
+          description: 上游 HTTP 状态码
+        status_text:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        body:
+          type: string
+        duration_ms:
+          type: integer
+          format: int64
+        size:
+          type: integer
+        truncated:
+          type: boolean
+    ImportOpenAPIResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportOpenAPIItem"
+        created:
+          type: array
+          items:
+            $ref: "#/components/schemas/API"
+        updated:
+          type: array
+          items:
+            $ref: "#/components/schemas/API"
+        failed:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportOpenAPIFail"
+        total:
+          type: integer
+    ImportOpenAPIItem:
+      type: object
+      properties:
+        name:
+          type: string
+        access_path:
+          type: string
+        access_path_prefixed:
+          type: string
+        access_methods:
+          type: string
+        access_protocols:
+          type: string
+        service_protocol:
+          type: string
+        service_host:
+          type: string
+        service_port:
+          type: integer
+        service_path:
+          type: string
+        action:
+          type: string
+          enum: [create, update]
+        existing_id:
+          type: integer
+          format: int64
+    ImportOpenAPIFail:
+      type: object
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        error:
+          type: string
+
+    RegisterRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+        password:
+          type: string
+          minLength: 6
+          maxLength: 64
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    CreateSpaceRequest:
+      type: object
+      required: [name, prefix]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 512
+        prefix:
+          type: string
+          maxLength: 128
+          description: 以 / 开头的路径前缀，例如 /order 或 /team/order
+          example: /order
+    UpdateSpaceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 512
+    AddMemberRequest:
+      type: object
+      required: [user_id]
+      properties:
+        user_id:
+          $ref: "#/components/schemas/Id"
+        role:
+          type: string
+          enum: [space_admin, member]
+          description: 省略时为 member
+    UpdateMemberRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [space_admin, member]
+    CreateGatewayRequest:
+      type: object
+      required: [name, admin_api, domain, network_zone]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 128
+        admin_api:
+          type: string
+          minLength: 8
+          maxLength: 512
+          example: http://127.0.0.1:8001
+        domain:
+          type: string
+          maxLength: 255
+          description: ip:port 或域名:port
+          example: 127.0.0.1:8000
+        network_zone:
+          type: string
+          enum: ["内网", DMZ]
+        shared:
+          type: boolean
+          default: true
+    UpdateGatewayRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 128
+        admin_api:
+          type: string
+          minLength: 8
+          maxLength: 512
+        domain:
+          type: string
+          maxLength: 255
+        network_zone:
+          type: string
+          enum: ["内网", DMZ]
+        shared:
+          type: boolean
+    ProbeGatewayRequest:
+      type: object
+      required: [admin_api]
+      properties:
+        admin_api:
+          type: string
+          minLength: 8
+          maxLength: 512
+    AuthorizeSpacesRequest:
+      type: object
+      required: [space_ids]
+      properties:
+        space_ids:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/Id"
+    CreateGroupRequest:
+      type: object
+      required: [name, gateway_id]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        gateway_id:
+          $ref: "#/components/schemas/Id"
+    UpdateGroupRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+    CreateAPIRequest:
+      type: object
+      required: [name, access_path, access_methods]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        access_path:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: 逗号、换行或分号分隔。会自动加上空间前缀。含 * 或显式 ~ 的路径按 Kong 正则路由处理。
+        access_methods:
+          type: string
+          description: 逗号分隔，保存时转为大写
+          example: GET,POST
+        access_protocols:
+          type: string
+          description: 逗号分隔的 http、https、grpc、grpcs。空则默认为 http
+        access_hosts:
+          type: string
+        access_headers:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        service_protocol:
+          type: string
+          enum: [http, https, grpc, grpcs]
+          default: http
+        service_host_kind:
+          type: string
+          enum: [direct, upstream]
+          default: direct
+        service_host:
+          type: string
+          description: direct 时必填主机名或 IP
+        service_upstream_id:
+          type: integer
+          format: int64
+          description: service_host_kind=upstream 时必填，且必须属于同一空间
+        service_port:
+          type: integer
+          minimum: 80
+          maximum: 65535
+          default: 80
+        service_path:
+          type: string
+          default: /
+          description: 单个以 / 开头的路径
+        service_retries:
+          type: integer
+          minimum: 0
+          default: 5
+        service_connect_timeout:
+          type: integer
+          description: 毫秒，默认 60000
+          default: 60000
+        service_write_timeout:
+          type: integer
+          default: 60000
+        service_read_timeout:
+          type: integer
+          default: 60000
+        access_strip_path:
+          type: boolean
+          default: true
+        request_buffering:
+          type: boolean
+          default: true
+        response_buffering:
+          type: boolean
+          default: true
+        auth_enabled:
+          type: boolean
+          default: false
+        auth_plugin:
+          type: string
+          enum: [key-auth, basic-auth, jwt, hmac-auth]
+          description: auth_enabled 为 true 时必填，创建后不可更改
+        auth_config:
+          type: object
+          additionalProperties: true
+        plugin_ids:
+          type: array
+          items:
+            $ref: "#/components/schemas/Id"
+    UpdateAPIRequest:
+      type: object
+      description: 未传的字段保持不变。认证开关和认证类型不可修改。
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        access_path:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        access_methods:
+          type: string
+        access_protocols:
+          type: string
+        access_hosts:
+          type: string
+        access_headers:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        service_protocol:
+          type: string
+          enum: [http, https, grpc, grpcs]
+        service_host_kind:
+          type: string
+          enum: [direct, upstream]
+        service_host:
+          type: string
+        service_upstream_id:
+          type: integer
+          format: int64
+        service_port:
+          type: integer
+          minimum: 80
+          maximum: 65535
+        service_path:
+          type: string
+        service_retries:
+          type: integer
+          minimum: 0
+        service_connect_timeout:
+          type: integer
+        service_write_timeout:
+          type: integer
+        service_read_timeout:
+          type: integer
+        access_strip_path:
+          type: boolean
+        request_buffering:
+          type: boolean
+        response_buffering:
+          type: boolean
+        auth_enabled:
+          type: boolean
+          description: 必须与当前值相同
+        auth_plugin:
+          type: string
+          description: 已开启认证时必须与当前插件相同
+        auth_config:
+          type: object
+          additionalProperties: true
+        plugin_ids:
+          type: array
+          description: 传入则整体替换插件绑定；不传则保持不变
+          items:
+            $ref: "#/components/schemas/Id"
+    SwitchVersionRequest:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: string
+          example: v1
+    LinkMarketConsumersRequest:
+      type: object
+      required: [consumer_ids]
+      properties:
+        consumer_ids:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/Id"
+    ImportOpenAPIRequest:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+          description: OpenAPI 3 或 Swagger 2 的 JSON/YAML 文件
+        dry_run:
+          type: string
+          description: true、1 或 yes 时只预览，不落库
+        service_protocol:
+          type: string
+          enum: [http, https, grpc, grpcs]
+        service_host:
+          type: string
+        service_port:
+          type: integer
+        service_path:
+          type: string
+    UpsertUpstreamRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$"
+        algorithm:
+          type: string
+          enum: [round-robin, consistent-hashing, least-connections, latency]
+          default: round-robin
+        slots:
+          type: integer
+          minimum: 10
+          maximum: 65536
+          default: 10000
+        hash_on:
+          type: string
+        hash_fallback:
+          type: string
+        hash_on_header:
+          type: string
+        hash_fallback_header:
+          type: string
+        hash_on_cookie:
+          type: string
+        hash_on_cookie_path:
+          type: string
+        hash_on_query_arg:
+          type: string
+        hash_fallback_query_arg:
+          type: string
+        hash_on_uri_capture:
+          type: string
+        hash_fallback_uri_capture:
+          type: string
+        healthchecks:
+          $ref: "#/components/schemas/HealthInput"
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/TargetInput"
+    TargetInput:
+      type: object
+      required: [target]
+      properties:
+        target:
+          type: string
+          description: host:port 或 ip:port
+          example: 10.0.0.1:8080
+        weight:
+          type: integer
+          default: 100
+    HealthInput:
+      type: object
+      nullable: true
+      properties:
+        active:
+          $ref: "#/components/schemas/HealthSide"
+        passive:
+          $ref: "#/components/schemas/HealthSide"
+        threshold:
+          type: number
+          format: double
+    HealthSide:
+      type: object
+      properties:
+        type:
+          type: string
+          description: 主动检查类型，例如 http、https、tcp
+        http_path:
+          type: string
+        timeout:
+          type: integer
+        concurrency:
+          type: integer
+        https_verify_certificate:
+          type: boolean
+        healthy_interval:
+          type: integer
+        healthy_successes:
+          type: integer
+        healthy_http_statuses:
+          type: array
+          items:
+            type: integer
+        unhealthy_interval:
+          type: integer
+        unhealthy_http_failures:
+          type: integer
+        unhealthy_tcp_failures:
+          type: integer
+        unhealthy_timeouts:
+          type: integer
+        unhealthy_http_statuses:
+          type: array
+          items:
+            type: integer
+    UpsertConsumerRequest:
+      type: object
+      required: [username]
+      properties:
+        username:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$"
+        custom_id:
+          type: string
+          description: 非空时同样受用户名规则约束，空间内唯一
+        credentials:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialInput"
+        api_ids:
+          type: array
+          description: 关联本空间已开启对应认证插件的 API，整体替换
+          items:
+            $ref: "#/components/schemas/Id"
+    CredentialInput:
+      type: object
+      required: [plugin]
+      description: |
+        config 为字符串键值。
+        key-auth：key 可省略，服务端生成。
+        basic-auth：需要 username、password。
+        jwt：algorithm 默认 HS256，支持 HS256/HS384/HS512/RS256/RS384/RS512/ES256/ES384；HS 算法可省略 secret，非 HS 需要 rsa_public_key；key 可省略。
+        hmac-auth：需要 username，secret 可省略。
+        acl：需要 group。
+      properties:
+        plugin:
+          type: string
+          enum: [key-auth, basic-auth, jwt, hmac-auth, acl]
+        config:
+          type: object
+          additionalProperties:
+            type: string
+    UpsertPluginRequest:
+      type: object
+      required: [name, plugin]
+      properties:
+        name:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$"
+        plugin:
+          $ref: "#/components/schemas/PluginKind"
+        config:
+          type: object
+          additionalProperties: true
+          description: Kong 插件配置，缺省字段按插件类型补默认值
+        enabled:
+          type: boolean
+          default: true
+    DebugProxyRequest:
+      type: object
+      required: [method, url]
+      properties:
+        method:
+          type: string
+          enum: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+        url:
+          type: string
+          format: uri
+          description: 仅允许 http 或 https
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          type: string
+        body_base64:
+          type: string
+          description: 与 body 二选一，优先使用二进制正文
+        timeout_ms:
+          type: integer
+          description: 默认 30000，最大 120000
+          maximum: 120000
+    CreateDebugHistoryRequest:
+      type: object
+      required: [method, url, request]
+      properties:
+        title:
+          type: string
+          maxLength: 255
+        api_id:
+          type: integer
+          format: int64
+        api_name:
+          type: string
+          maxLength: 128
+        method:
+          type: string
+        url:
+          type: string
+          maxLength: 2048
+        request:
+          type: object
+          additionalProperties: true
+          description: 调试请求快照，序列化后不超过 512 KiB
