@@ -215,6 +215,19 @@ func (h *APIHandler) ListVersions(c *gin.Context) {
 	response.OK(c, list)
 }
 
+func (h *APIHandler) DeleteVersion(c *gin.Context) {
+	id, ok := parseID(c, "aid")
+	if !ok {
+		return
+	}
+	version := c.Param("version")
+	if err := h.svc.DeleteVersion(id, version); err != nil {
+		mapError(c, err)
+		return
+	}
+	response.OK(c, nil)
+}
+
 func (h *APIHandler) Share(c *gin.Context) {
 	id, ok := parseID(c, "aid")
 	if !ok {

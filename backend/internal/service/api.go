@@ -759,12 +759,60 @@ func (s *APIService) ListVersions(apiID uint64) ([]model.APIVersion, error) {
 	return list, err
 }
 
+func (s *APIService) DeleteVersion(apiID uint64, version string) error {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return fmt.Errorf("%w: version is required", ErrBadRequest)
+	}
+	api, err := s.Get(apiID)
+	if err != nil {
+		return err
+	}
+	var ver model.APIVersion
+	if err := s.db.Where("api_id = ? AND version = ?", apiID, version).First(&ver).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: version not found", ErrNotFound)
+		}
+		return err
+	}
+	if api.Status == model.APIStatusPublished && api.CurrentVersion == version {
+		return fmt.Errorf("%w: 当前已发布版本不允许删除，请先切换或下线", ErrConflict)
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&ver).Error; err != nil {
+			return err
+		}
+		if api.CurrentVersion == version {
+			return tx.Model(&model.API{}).Where("id = ?", apiID).Update("current_version", "").Error
+		}
+		return nil
+	})
+}
+
 func (s *APIService) nextVersion(apiID uint64) (string, error) {
-	var count int64
-	if err := s.db.Model(&model.APIVersion{}).Where("api_id = ?", apiID).Count(&count).Error; err != nil {
+	var versions []model.APIVersion
+	if err := s.db.Select("version").Where("api_id = ?", apiID).Find(&versions).Error; err != nil {
 		return "", err
 	}
-	return "v" + strconv.FormatInt(count+1, 10), nil
+	var maxN int64
+	for _, v := range versions {
+		n, ok := parseVersionNumber(v.Version)
+		if ok && n > maxN {
+			maxN = n
+		}
+	}
+	return "v" + strconv.FormatInt(maxN+1, 10), nil
+}
+
+func parseVersionNumber(version string) (int64, bool) {
+	if !strings.HasPrefix(version, "v") {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(version[1:], 10, 64)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 func (s *APIService) withSpacePrefix(spaceID uint64, paths []string) ([]string, error) {

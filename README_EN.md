@@ -169,6 +169,7 @@ Open `http://localhost:5373`. The Vite dev server proxies `/api` to `http://loca
 - **Offline**: remove Kong Service/Route; APIs linked to consumers cannot go offline; market share is cleared on offline
 - **Delete**: published APIs or APIs linked to consumers cannot be deleted
 - **Switch version**: offline current config and republish from the selected snapshot
+- **Delete version**: remove historical version snapshots; the currently published version cannot be deleted until switched or taken offline
 - **Share / unshare**: only published APIs can be shared to the API market
 - **Batch operations**: multi-select to publish, offline, or delete (ineligible items are skipped)
 - **Copy as curl**: build a curl command from gateway Domain, access path, and auth, then copy to clipboard

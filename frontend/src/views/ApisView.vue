@@ -303,7 +303,7 @@
             {{ summarize(row.config_snapshot) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140">
+        <el-table-column label="操作" width="200">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
             <el-button
@@ -314,6 +314,22 @@
             >
               切换
             </el-button>
+            <el-tooltip
+              :disabled="canDeleteVersion(row.version)"
+              content="当前已发布版本不允许删除，请先切换或下线"
+              placement="top"
+            >
+              <span>
+                <el-button
+                  link
+                  type="danger"
+                  :disabled="!canDeleteVersion(row.version)"
+                  @click="onDeleteVersion(row.version)"
+                >
+                  删除
+                </el-button>
+              </span>
+            </el-tooltip>
           </template>
         </el-table-column>
       </el-table>
@@ -1252,6 +1268,22 @@ async function onSwitch(version: string) {
   await apiMod.switchVersion(currentApi.value.id, version)
   ElMessage.success('切换成功')
   versionVisible.value = false
+  await load()
+}
+
+function canDeleteVersion(version: string) {
+  return !(currentApi.value?.status === 'published' && currentApi.value?.current_version === version)
+}
+
+async function onDeleteVersion(version: string) {
+  if (!currentApi.value) return
+  await ElMessageBox.confirm(`确认删除版本 ${version}？删除后不可恢复。`, '删除版本', { type: 'warning' })
+  await apiMod.deleteVersion(currentApi.value.id, version)
+  ElMessage.success('已删除')
+  if (currentApi.value.current_version === version) {
+    currentApi.value = { ...currentApi.value, current_version: '' }
+  }
+  versions.value = (await apiMod.listVersions(currentApi.value.id)) || []
   await load()
 }
 

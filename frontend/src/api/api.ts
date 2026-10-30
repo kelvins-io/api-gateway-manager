@@ -121,6 +121,10 @@ export function listVersions(aid: number) {
   return request<ApiVersion[]>(() => http.get(`/apis/${aid}/versions`))
 }
 
+export function deleteVersion(aid: number, version: string) {
+  return request<null>(() => http.delete(`/apis/${aid}/versions/${encodeURIComponent(version)}`))
+}
+
 export function listUpstreams(spaceId: number) {
   return request<UpstreamItem[]>(() => http.get(`/spaces/${spaceId}/upstreams`))
 }
