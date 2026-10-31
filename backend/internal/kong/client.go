@@ -262,6 +262,11 @@ func serviceFields(snap model.APIConfigSnapshot) (host string, port int, path, p
 	if path == "" {
 		path = "/"
 	}
+	// Templated service paths are rewritten by request-transformer (uri_captures);
+	// Kong Service.path itself cannot contain {param}.
+	if model.HasPathParams(path) {
+		path = "/"
+	}
 	retries = snap.EffectiveRetries()
 	connTimeout = snap.EffectiveConnectTimeout()
 	writeTimeout = snap.EffectiveWriteTimeout()

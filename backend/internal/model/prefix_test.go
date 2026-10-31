@@ -60,4 +60,20 @@ func TestKongRoutePaths(t *testing.T) {
 	if len(got) != 1 || got[0] != "~/already/*" {
 		t.Fatalf("should not double-prefix: %v", got)
 	}
+	got = KongRoutePaths([]string{"/api/v1/spaces/{id}/groups", "/pets/{petId}/photos/{photoId}"})
+	if len(got) != 2 ||
+		got[0] != `~/api/v1/spaces/(?<id>[^/]+)/groups$` ||
+		got[1] != `~/pets/(?<petId>[^/]+)/photos/(?<photoId>[^/]+)$` {
+		t.Fatalf("openapi params: %v", got)
+	}
+	got = KongRoutePaths([]string{"~/custom/{id}"})
+	if len(got) != 1 || got[0] != `~/custom/(?<id>[^/]+)$` {
+		t.Fatalf("tilde+param: %v", got)
+	}
+	// Shorter {param} route must not be a prefix of a longer one.
+	short := KongRoutePaths([]string{"/api/v1/spaces/{id}"})[0]
+	long := KongRoutePaths([]string{"/api/v1/spaces/{id}/groups"})[0]
+	if short != `~/api/v1/spaces/(?<id>[^/]+)$` || long != `~/api/v1/spaces/(?<id>[^/]+)/groups$` {
+		t.Fatalf("anchors short=%q long=%q", short, long)
+	}
 }

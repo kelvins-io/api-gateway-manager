@@ -269,6 +269,11 @@ func parseOpenAPIDocument(opt ImportOpenAPIOptions) ([]ImportOpenAPIItem, error)
 			}
 			break
 		}
+		servicePath := svc.ServicePath
+		// Path templates require matching {param} on the backend path for request-transformer.
+		if model.HasPathParams(accessPath) {
+			servicePath = model.JoinServiceAccessPath(servicePath, accessPath)
+		}
 
 		items = append(items, ImportOpenAPIItem{
 			Name:            name,
@@ -278,7 +283,7 @@ func parseOpenAPIDocument(opt ImportOpenAPIOptions) ([]ImportOpenAPIItem, error)
 			ServiceProtocol: svc.Protocol,
 			ServiceHost:     svc.Host,
 			ServicePort:     svc.Port,
-			ServicePath:     svc.ServicePath,
+			ServicePath:     servicePath,
 		})
 	}
 	return items, nil

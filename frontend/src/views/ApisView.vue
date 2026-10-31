@@ -237,7 +237,10 @@
           <el-input-number v-model="form.service_port" :min="80" :max="65535" :step="1" />
         </el-form-item>
         <el-form-item label="后端服务Path">
-          <el-input v-model="form.service_path" placeholder="/" />
+          <el-input
+            v-model="form.service_path"
+            placeholder="如 / 或 /api/v1/spaces/{id}/groups（含 {param} 时须与接入 Path 参数一致）"
+          />
         </el-form-item>
         <el-form-item label="Plugins">
           <el-select v-model="form.plugin_ids" multiple filterable style="width: 100%" placeholder="可关联多个本空间 Plugin">
@@ -625,6 +628,69 @@ function normalizePath(raw: string) {
   }
   if (!p.startsWith('/')) p = `/${p}`
   return tilde ? `~${p}` : p
+}
+
+const pathParamRe = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g
+
+function extractPathParams(path: string): string[] {
+  const names: string[] = []
+  const seen = new Set<string>()
+  pathParamRe.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = pathParamRe.exec(path)) !== null) {
+    if (seen.has(m[1])) continue
+    seen.add(m[1])
+    names.push(m[1])
+  }
+  return names
+}
+
+function sameParamSet(a: string[], b: string[]) {
+  if (a.length !== b.length) return false
+  const set = new Set(a)
+  return b.every((n) => set.has(n))
+}
+
+function hasInvalidPathParamSyntax(path: string) {
+  const stripped = path.replace(/\{[A-Za-z_][A-Za-z0-9_]*\}/g, '')
+  return /[{}]/.test(stripped)
+}
+
+function validatePathParams(accessPaths: string[], servicePath: string): string | null {
+  if (hasInvalidPathParamSyntax(servicePath)) {
+    return '后端服务 Path 的 {param} 写法无效，请使用如 {id}'
+  }
+  let expected: string[] | null = null
+  for (const p of accessPaths) {
+    if (hasInvalidPathParamSyntax(p)) {
+      return `接入 Path「${p}」的 {param} 写法无效`
+    }
+    const params = extractPathParams(p)
+    if (!params.length) {
+      if (expected) {
+        return '含 {param} 时，每个接入 Path 都必须包含相同的参数名'
+      }
+      continue
+    }
+    if (!expected) {
+      expected = params
+      continue
+    }
+    if (!sameParamSet(expected, params)) {
+      return '多个接入 Path 的 {param} 参数名必须一致'
+    }
+  }
+  const serviceParams = extractPathParams(servicePath)
+  if (!expected) {
+    if (serviceParams.length) {
+      return '后端服务 Path 含 {param} 时，接入 Path 也必须包含相同参数'
+    }
+    return null
+  }
+  if (!sameParamSet(expected, serviceParams)) {
+    return `接入 Path 含 {${expected.join('},{')}} 时，后端服务 Path 必须包含相同的 {param}`
+  }
+  return null
 }
 
 function applyPrefix(path: string) {
@@ -1171,6 +1237,14 @@ async function save() {
   const paths = form.pathList.map((p) => normalizePath(p)).filter(Boolean)
   if (!paths.length) {
     ElMessage.warning('请至少添加一个路径')
+    return
+  }
+  const pathParamErr = validatePathParams(
+    paths.map((p) => applyPrefix(p)),
+    form.service_path,
+  )
+  if (pathParamErr) {
+    ElMessage.warning(pathParamErr)
     return
   }
   const payload = {

@@ -10,6 +10,9 @@ COPY . .
 # 页面访问前缀，例如 /proxy-path。空则挂在站点根路径。改前缀需要重新构建。
 ARG VITE_BASE_PATH=
 ENV VITE_BASE_PATH=$VITE_BASE_PATH
+# 后端接口请求前缀，例如 http://192.168.0.100:80/api-gateway-manager。空则使用相对路径 /api/v1。
+ARG VITE_API_BASE=
+ENV VITE_API_BASE=$VITE_API_BASE
 RUN npm run build
 
 FROM nginx:1.27-alpine

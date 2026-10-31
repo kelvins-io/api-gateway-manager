@@ -130,10 +130,14 @@ func (s *APIService) Create(groupID uint64, in CreateAPIInput) (*model.API, erro
 	if err != nil {
 		return nil, err
 	}
+	accessPathJoined := strings.Join(paths, ",")
+	if err := validateAPIPathParams(accessPathJoined, svcFields.ServicePath); err != nil {
+		return nil, err
+	}
 	api := &model.API{
 		GroupID:               groupID,
 		Name:                  in.Name,
-		AccessPath:            strings.Join(paths, ","),
+		AccessPath:            accessPathJoined,
 		AccessMethods:         normalizeMethods(in.AccessMethods),
 		AccessProtocols:       normalizeAccessProtocols(in.AccessProtocols),
 		AccessHosts:           accessHosts,
@@ -166,6 +170,10 @@ func (s *APIService) Create(groupID uint64, in CreateAPIInput) (*model.API, erro
 		return nil, err
 	}
 	if err := s.replacePlugins(api.ID, group.SpaceID, in.PluginIDs); err != nil {
+		return nil, err
+	}
+	api.Group = group
+	if err := s.syncPathParamPlugin(api, accessPathJoined, svcFields.ServicePath); err != nil {
 		return nil, err
 	}
 	return s.Get(api.ID)
@@ -212,6 +220,7 @@ func (s *APIService) Update(ctx context.Context, id uint64, in UpdateAPIInput) (
 		}
 		updates["name"] = in.Name
 	}
+	nextAccessPath := api.AccessPath
 	if in.AccessPath != "" {
 		paths := model.SplitPaths(in.AccessPath)
 		if len(paths) == 0 {
@@ -224,7 +233,8 @@ func (s *APIService) Update(ctx context.Context, id uint64, in UpdateAPIInput) (
 		if err != nil {
 			return nil, err
 		}
-		updates["access_path"] = strings.Join(paths, ",")
+		nextAccessPath = strings.Join(paths, ",")
+		updates["access_path"] = nextAccessPath
 	}
 	if in.AccessMethods != "" {
 		updates["access_methods"] = normalizeMethods(in.AccessMethods)
@@ -242,6 +252,7 @@ func (s *APIService) Update(ctx context.Context, id uint64, in UpdateAPIInput) (
 	}
 	updates["access_hosts"] = hosts
 	updates["access_headers"] = headers
+	nextServicePath := api.ServicePath
 	if in.ServiceProtocol != "" || in.ServiceHostKind != "" || in.ServiceHost != "" || in.ServiceUpstreamID != nil || in.ServicePort != nil || in.ServicePath != "" || in.ServiceRetries != nil || in.ServiceConnectTimeout != nil || in.ServiceWriteTimeout != nil || in.ServiceReadTimeout != nil {
 		port := api.ServicePort
 		if in.ServicePort != nil {
@@ -264,6 +275,7 @@ func (s *APIService) Update(ctx context.Context, id uint64, in UpdateAPIInput) (
 		if svcFields.ServicePath == "" {
 			svcFields.ServicePath = api.ServicePath
 		}
+		nextServicePath = svcFields.ServicePath
 		updates["service_protocol"] = svcFields.Protocol
 		updates["service_host_kind"] = svcFields.HostKind
 		updates["service_host"] = svcFields.Host
@@ -278,6 +290,9 @@ func (s *APIService) Update(ctx context.Context, id uint64, in UpdateAPIInput) (
 		updates["service_connect_timeout"] = svcFields.ConnectTimeout
 		updates["service_write_timeout"] = svcFields.WriteTimeout
 		updates["service_read_timeout"] = svcFields.ReadTimeout
+	}
+	if err := validateAPIPathParams(nextAccessPath, nextServicePath); err != nil {
+		return nil, err
 	}
 	if in.AccessStripPath != nil {
 		updates["access_strip_path"] = *in.AccessStripPath
@@ -320,11 +335,14 @@ func (s *APIService) Update(ctx context.Context, id uint64, in UpdateAPIInput) (
 			return nil, err
 		}
 	}
+	if err := s.syncPathParamPlugin(api, nextAccessPath, nextServicePath); err != nil {
+		return nil, err
+	}
 	saved, err := s.Get(id)
 	if err != nil {
 		return nil, err
 	}
-	if in.PluginIDs != nil || in.ConsumerIDs != nil || in.AuthEnabled != nil {
+	if in.PluginIDs != nil || in.ConsumerIDs != nil || in.AuthEnabled != nil || model.HasPathParams(nextAccessPath) || model.HasPathParams(nextServicePath) {
 		if err := applyAPIPlugins(ctx, saved); err != nil {
 			return nil, err
 		}
@@ -352,6 +370,12 @@ func (s *APIService) Delete(id uint64) error {
 		}
 		if err := tx.Exec("DELETE FROM api_consumers WHERE api_id = ?", id).Error; err != nil {
 			return err
+		}
+		if api.Group != nil {
+			if err := tx.Where("space_id = ? AND name = ?", api.Group.SpaceID, pathParamPluginName(id)).
+				Delete(&model.Plugin{}).Error; err != nil {
+				return err
+			}
 		}
 		return tx.Delete(&model.API{}, id).Error
 	})

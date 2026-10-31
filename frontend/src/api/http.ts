@@ -3,8 +3,11 @@ import { ElMessage } from 'element-plus'
 import type { ApiResponse } from '@/types'
 import router from '@/router'
 
+const apiBase = String(import.meta.env.VITE_API_BASE || '')
+  .trim()
+  .replace(/\/$/, '')
 const http = axios.create({
-  baseURL: '/api/v1',
+  baseURL: apiBase ? `${apiBase}/api/v1` : '/api/v1',
   timeout: 20000,
 })
 

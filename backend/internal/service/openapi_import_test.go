@@ -45,6 +45,9 @@ func TestParseOpenAPIJSON(t *testing.T) {
 	if items[1].AccessPath != "/pets/{petId}" || items[1].AccessMethods != "GET" {
 		t.Fatalf("unexpected second item: %+v", items[1])
 	}
+	if items[1].ServicePath != "/v1/pets/{petId}" {
+		t.Fatalf("want joined service path /v1/pets/{petId}, got %s", items[1].ServicePath)
+	}
 }
 
 func TestParseOpenAPIYAMLSwagger2(t *testing.T) {
@@ -105,6 +108,9 @@ func TestParseOpenAPIOperationArrayWrapped(t *testing.T) {
 	}
 	if items[0].AccessMethods != "GET,DELETE" {
 		t.Fatalf("unexpected methods %s", items[0].AccessMethods)
+	}
+	if items[0].ServicePath != "/cache/{key}" {
+		t.Fatalf("want service path /cache/{key}, got %s", items[0].ServicePath)
 	}
 }
 

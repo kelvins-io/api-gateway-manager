@@ -453,14 +453,33 @@ func normalizePathWithTilde(p string) string {
 }
 
 // KongRoutePaths prepares access paths for Kong Route.Paths.
-// Paths that contain '*' are treated as regex and get a '~' prefix.
+// Paths that contain '*' or OpenAPI-style {param} are treated as regex and get a '~' prefix.
+// {param} segments are rewritten to named capture groups (?<param>[^/]+) for uri_captures,
+// and the regex is end-anchored with $ so a short template cannot prefix-match a longer path
+// (e.g. /spaces/{id} must not swallow /spaces/{id}/groups). Kong requires regex paths to
+// start with "~/" (not "~^"), so only '$' is appended.
 func KongRoutePaths(paths []string) []string {
 	out := make([]string, 0, len(paths))
 	for _, p := range paths {
-		if strings.Contains(p, "*") && !strings.HasPrefix(p, "~") {
-			p = "~" + p
+		tilde := strings.HasPrefix(p, "~")
+		body := p
+		if tilde {
+			body = strings.TrimPrefix(p, "~")
 		}
-		out = append(out, p)
+		if HasPathParams(body) {
+			body = ToKongRegexBody(body)
+			if !strings.HasSuffix(body, "$") {
+				body = body + "$"
+			}
+			tilde = true
+		} else if strings.Contains(body, "*") {
+			tilde = true
+		}
+		if tilde {
+			out = append(out, "~"+body)
+		} else {
+			out = append(out, body)
+		}
 	}
 	return out
 }

@@ -17,6 +17,10 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Docker 把宿主 5373 映到容器 80 时，绝对跳转会按监听端口丢掉宿主端口，
+    # 浏览器落到 :80（Kong）而不是前端。改用相对 Location，由浏览器保留当前 host:port。
+    absolute_redirect off;
+
     client_max_body_size 20m;
 
     location /api/ {
