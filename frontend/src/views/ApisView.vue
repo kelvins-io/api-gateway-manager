@@ -59,7 +59,7 @@
       <el-table-column label="接入路径" min-width="320">
         <template #default="{ row }">
           <div v-for="p in splitPaths(row.access_path)" :key="p" class="access-url">
-            {{ fullAccessPath(row, p) }}
+            {{ displayAccessPath(row, p) }}
           </div>
           <span v-if="!splitPaths(row.access_path).length">-</span>
         </template>
@@ -802,26 +802,23 @@ function protocolsOf(row: ApiItem): string[] {
   return list.length ? list : ['http']
 }
 
-function gatewayDomain(row: ApiItem): string {
-  return row.group?.gateway?.domain || ''
-}
-
 function spacePrefixOf(row: ApiItem): string {
   return (row.group?.space?.prefix || '').replace(/\/$/, '')
 }
 
-function joinSpacePrefix(path: string, prefix: string): string {
+/** 列表展示：去掉空间前缀，不拼 domain */
+function displayAccessPath(row: ApiItem, path: string): string {
+  const prefix = spacePrefixOf(row)
+  let tilde = false
   let p = path.trim()
-  if (p.startsWith('~')) p = p.slice(1)
-  if (!p.startsWith('/')) p = `/${p}`
-  if (prefix && p !== prefix && !p.startsWith(`${prefix}/`)) {
-    p = `${prefix}${p}`
+  if (p.startsWith('~')) {
+    tilde = true
+    p = p.slice(1)
   }
-  return p
-}
-
-function fullAccessPath(row: ApiItem, path: string): string {
-  return `${gatewayDomain(row)}${joinSpacePrefix(path, spacePrefixOf(row))}`
+  if (prefix && (p === prefix || p.startsWith(`${prefix}/`))) {
+    p = p.slice(prefix.length) || '/'
+  }
+  return tilde ? `~${p}` : p
 }
 
 function splitPaths(raw: string): string[] {
