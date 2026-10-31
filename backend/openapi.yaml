@@ -935,7 +935,7 @@ paths:
       tags: [API]
       summary: 更新 API
       description: |
-        需要所属空间的管理员。认证开关和认证插件类型创建后不可更改；已开启认证时只能更新 `auth_config`。
+        需要所属空间的管理员。免认证 API 可首次启用认证并选择插件类型；已开启认证后不可关闭，也不可更换认证类型，只能更新 `auth_config`。
         传入 `plugin_ids` 会整体替换插件绑定。路由与上游配置先写入数据库，再次发布或切换版本后才会更新 Kong。
         已发布的 API 在变更插件绑定或认证配置时，会同步插件到 Kong。
       operationId: updateApi
@@ -2945,7 +2945,7 @@ components:
         auth_plugin:
           type: string
           enum: [key-auth, basic-auth, jwt, hmac-auth]
-          description: auth_enabled 为 true 时必填，创建后不可更改
+          description: auth_enabled 为 true 时必填；已启用后不可更换类型
         auth_config:
           type: object
           additionalProperties: true
@@ -2955,7 +2955,7 @@ components:
             $ref: "#/components/schemas/Id"
     UpdateAPIRequest:
       type: object
-      description: 未传的字段保持不变。认证开关和认证类型不可修改。
+      description: 未传的字段保持不变。免认证可首次启用认证；已开启后不可关闭或更换认证类型。
       properties:
         name:
           type: string
@@ -3011,10 +3011,10 @@ components:
           type: boolean
         auth_enabled:
           type: boolean
-          description: 必须与当前值相同
+          description: 免认证时可改为 true 以首次启用；已开启后不可改为 false
         auth_plugin:
           type: string
-          description: 已开启认证时必须与当前插件相同
+          description: 首次启用时必填；已开启认证时必须与当前插件相同
         auth_config:
           type: object
           additionalProperties: true

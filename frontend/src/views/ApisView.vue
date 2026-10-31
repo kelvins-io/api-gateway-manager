@@ -248,11 +248,11 @@
           </el-select>
         </el-form-item>
         <el-form-item label="启用认证">
-          <el-switch v-model="form.auth_enabled" :disabled="!!editing" />
+          <el-switch v-model="form.auth_enabled" :disabled="!!editing?.auth_enabled" />
         </el-form-item>
         <template v-if="form.auth_enabled">
           <el-form-item label="认证类型">
-            <el-select v-model="form.auth_plugin" style="width: 100%" :disabled="!!editing">
+            <el-select v-model="form.auth_plugin" style="width: 100%" :disabled="!!editing?.auth_enabled">
               <el-option v-for="p in authPlugins" :key="p" :label="p" :value="p" />
             </el-select>
           </el-form-item>

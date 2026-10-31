@@ -80,8 +80,11 @@ func TestWithAPIAuth(t *testing.T) {
 	if len(allow) != 1 || allow[0] != "G-4" {
 		t.Fatalf("allow = %#v", specs[2].Config["allow"])
 	}
-	if err := validateAuthUpdate(false, "", true, "key-auth"); err == nil {
-		t.Fatal("expected reject enabling auth")
+	if err := validateAuthUpdate(false, "", true, "key-auth"); err != nil {
+		t.Fatalf("expected allow enabling auth from none: %v", err)
+	}
+	if err := validateAuthUpdate(true, "key-auth", false, "key-auth"); err == nil {
+		t.Fatal("expected reject disabling auth")
 	}
 	if err := validateAuthUpdate(true, "key-auth", true, "jwt"); err == nil {
 		t.Fatal("expected reject auth type change")

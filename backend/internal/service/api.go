@@ -312,6 +312,14 @@ func (s *APIService) Update(ctx context.Context, id uint64, in UpdateAPIInput) (
 				return nil, err
 			}
 			updates["auth_config"] = api.AuthConfig
+		} else if *in.AuthEnabled {
+			// 免认证 → 首次启用认证
+			if err := applyAuthFields(api, true, in.AuthPlugin, in.AuthConfig); err != nil {
+				return nil, err
+			}
+			updates["auth_enabled"] = true
+			updates["auth_plugin"] = api.AuthPlugin
+			updates["auth_config"] = api.AuthConfig
 		}
 	}
 	if len(updates) > 0 {
@@ -866,8 +874,9 @@ func (s *APIService) replacePlugins(apiID, spaceID uint64, ids []uint64) error {
 }
 
 func validateAuthUpdate(currentEnabled bool, currentPlugin string, nextEnabled bool, nextPlugin string) error {
-	if nextEnabled != currentEnabled {
-		return fmt.Errorf("%w: auth cannot be enabled or disabled after creation", ErrBadRequest)
+	// 允许免认证首次启用认证；禁止关闭已启用的认证
+	if currentEnabled && !nextEnabled {
+		return fmt.Errorf("%w: auth cannot be disabled after creation", ErrBadRequest)
 	}
 	if currentEnabled && strings.TrimSpace(strings.ToLower(nextPlugin)) != currentPlugin {
 		return fmt.Errorf("%w: auth type cannot be changed", ErrBadRequest)
