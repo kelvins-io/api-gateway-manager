@@ -207,6 +207,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ApiItem, ConsumerItem } from '@/types'
+import { resolveAIRouterVirtualKeyHeader } from '@/utils/aiRouterHeaders'
 import {
   createDebugHistory,
   deleteDebugHistory,
@@ -391,6 +392,7 @@ function hydrateFromApi() {
       hdrs.push({ enabled: true, key: name, value })
     }
   }
+  applyAIRouterVirtualKeyHeader(api, hdrs)
   hdrs.push(emptyPair())
   headers.value = hdrs
   params.value = [emptyPair()]
@@ -399,6 +401,21 @@ function hydrateFromApi() {
   bodyType.value = method.value === 'GET' || method.value === 'HEAD' ? 'none' : 'json'
   bodyText.value = bodyType.value === 'json' ? '{\n  \n}' : ''
   applyAuthFromApi(api, props.consumer || null)
+}
+
+function applyAIRouterVirtualKeyHeader(api: ApiItem, hdrs: KvPair[]) {
+  const preset = resolveAIRouterVirtualKeyHeader(api.plugins || [])
+  if (!preset) return
+  const nameLc = preset.name.toLowerCase()
+  const exists = hdrs.some((h) => h.key.trim().toLowerCase() === nameLc && h.value.trim())
+  if (exists) return
+  // Drop empty placeholder for the same header name, then preset.
+  for (let i = hdrs.length - 1; i >= 0; i--) {
+    if (hdrs[i].key.trim().toLowerCase() === nameLc && !hdrs[i].value.trim()) {
+      hdrs.splice(i, 1)
+    }
+  }
+  hdrs.push({ enabled: true, key: preset.name, value: preset.value })
 }
 
 function firstAccessPath(api: ApiItem): string {

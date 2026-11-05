@@ -207,6 +207,7 @@
             <el-button link type="danger" @click="form.headerList.splice(i, 1)">删除</el-button>
           </div>
           <el-button link type="primary" @click="form.headerList.push({ name: '', value: '' })">添加 Header</el-button>
+          <div v-if="aiRouterVirtualKeyHint" class="form-hint">{{ aiRouterVirtualKeyHint }}</div>
         </el-form-item>
         <el-form-item label="接入 Strip Path">
           <el-switch v-model="form.access_strip_path" />
@@ -482,6 +483,10 @@ import { useUserStore } from '@/stores/user'
 import ListPagination from '@/components/ListPagination.vue'
 import ApiDebugger from '@/components/ApiDebugger.vue'
 import { usePagination } from '@/composables/usePagination'
+import {
+  resolveAIRouterVirtualKeyHeader,
+  syncAIRouterVirtualKeyHeaders,
+} from '@/utils/aiRouterHeaders'
 
 const route = useRoute()
 const store = useUserStore()
@@ -511,6 +516,24 @@ const batchBusy = ref(false)
 watch([nameQuery, statusQuery, sharedQuery], () => {
   resetPage()
 })
+
+const selectedFormPlugins = computed(() =>
+  plugins.value.filter((p) => form.plugin_ids.includes(p.id)),
+)
+
+const aiRouterVirtualKeyHint = computed(() => {
+  const preset = resolveAIRouterVirtualKeyHeader(selectedFormPlugins.value)
+  if (!preset) return ''
+  return `已关联启用虚拟 Key 的 ai-router：已预填 ${preset.name}: ${preset.value}`
+})
+
+watch(
+  () => [...form.plugin_ids],
+  () => {
+    if (!visible.value) return
+    form.headerList = syncAIRouterVirtualKeyHeaders(form.headerList, selectedFormPlugins.value)
+  },
+)
 
 function applyFilter() {
   resetPage()
@@ -1211,6 +1234,10 @@ function openEdit(row: ApiItem) {
   form.auth_header_names = Array.isArray(cfg.header_names) ? cfg.header_names.join(',') : 'authorization'
   form.auth_hide_credentials = !!cfg.hide_credentials
   form.auth_clock_skew = Number(cfg.clock_skew || 300)
+  form.headerList = syncAIRouterVirtualKeyHeaders(
+    form.headerList,
+    (row.plugins || []).filter((p) => form.plugin_ids.includes(p.id)),
+  )
   visible.value = true
 }
 
@@ -1407,6 +1434,12 @@ onMounted(async () => {
   gap: 8px;
   margin-bottom: 8px;
   width: 100%;
+}
+.form-hint {
+  margin-top: 6px;
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.4;
 }
 .version-plugins {
   margin-top: 16px;
