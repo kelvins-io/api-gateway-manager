@@ -19,10 +19,11 @@ var pluginNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
 // allowedPlugins is Kong Gateway 3.4.2 OSS bundled plugins plus custom plugins
 // (e.g. proxy-cache-advanced, response-ratelimiting-advanced, grpc-gateway-advanced,
-// grpc-web-advanced, request-gzip, response-gzip).
+// grpc-web-advanced, request-gzip, response-gzip, ai-router).
 var allowedPlugins = map[string]struct{}{
 	"acl":                            {},
 	"acme":                           {},
+	"ai-router":                      {},
 	"aws-lambda":                     {},
 	"azure-functions":                {},
 	"basic-auth":                     {},
@@ -424,6 +425,8 @@ func normalizePluginConfig(kind string, in map[string]interface{}) (map[string]i
 			"generator":       gen,
 			"echo_downstream": boolField(in, "echo_downstream", false),
 		}, nil
+	case "ai-router":
+		return normalizeAIRouterConfig(in)
 	default:
 		// Pass through raw config for other Kong 3.4.2 OSS plugins; Kong validates on publish.
 		if in == nil {
@@ -523,6 +526,54 @@ func applyAPIPlugins(ctx context.Context, api *model.API) error {
 		return fmt.Errorf("sync plugins: %w", err)
 	}
 	return nil
+}
+
+func normalizeAIRouterConfig(in map[string]interface{}) (map[string]interface{}, error) {
+	if in == nil {
+		return nil, fmt.Errorf("%w: ai-router config is required", ErrBadRequest)
+	}
+	rawList, ok := in["model_list"]
+	if !ok || rawList == nil {
+		return nil, fmt.Errorf("%w: ai-router model_list is required", ErrBadRequest)
+	}
+	list, ok := rawList.([]interface{})
+	if !ok || len(list) == 0 {
+		return nil, fmt.Errorf("%w: ai-router model_list must be a non-empty array", ErrBadRequest)
+	}
+	strategy := strField(in, "routing_strategy", "simple-shuffle")
+	if !oneOf(strategy,
+		"simple-shuffle",
+		"least-busy",
+		"latency-based-routing",
+		"cost-based-routing",
+		"usage-based-routing",
+		"semantic",
+	) {
+		return nil, fmt.Errorf("%w: invalid routing_strategy", ErrBadRequest)
+	}
+	backend := strField(in, "state_backend", "local")
+	if !oneOf(backend, "local", "redis") {
+		return nil, fmt.Errorf("%w: invalid state_backend", ErrBadRequest)
+	}
+	if backend == "redis" {
+		redisCfg, _ := in["redis"].(map[string]interface{})
+		if strField(redisCfg, "host", "") == "" {
+			return nil, fmt.Errorf("%w: redis.host is required when state_backend=redis", ErrBadRequest)
+		}
+	}
+	if strategy == "semantic" {
+		semantic, _ := in["semantic"].(map[string]interface{})
+		if strField(semantic, "api_key", "") == "" {
+			return nil, fmt.Errorf("%w: semantic.api_key is required when routing_strategy=semantic", ErrBadRequest)
+		}
+	}
+	out := make(map[string]interface{}, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	out["routing_strategy"] = strategy
+	out["state_backend"] = backend
+	return out, nil
 }
 
 func syncPluginOnPublishedAPIs(ctx context.Context, db *gorm.DB, pluginID uint64) error {

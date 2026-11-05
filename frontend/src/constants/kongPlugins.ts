@@ -29,6 +29,10 @@ export const pluginCategories: PluginCategory[] = [
     ],
   },
   {
+    label: 'AI',
+    plugins: ['ai-router'],
+  },
+  {
     label: '无服务器 / Serverless',
     plugins: ['aws-lambda', 'azure-functions', 'pre-function', 'post-function'],
   },

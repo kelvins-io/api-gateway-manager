@@ -640,6 +640,171 @@ export const pluginFormSchemas: Record<string, FormField[]> = {
     { key: 'port', label: 'port', type: 'number', required: true, min: 1, max: 65535 },
     { key: 'timeout', label: 'timeout', type: 'number', default: 10000, min: 0 },
   ],
+  'ai-router': [
+    {
+      key: 'model_list',
+      label: 'model_list',
+      type: 'json',
+      required: true,
+      default: `[
+  {
+    "model_name": "gpt-4o",
+    "description": "通用对话与写作",
+    "catch_all": true,
+    "litellm_params": {
+      "model": "openai/gpt-4o",
+      "api_base": "https://api.openai.com/v1",
+      "api_key": "",
+      "weight": 1,
+      "order": 1
+    }
+  }
+]`,
+      hint: '对齐 LiteLLM model_list；每项含 model_name、description、catch_all、litellm_params（model/api_base/api_key/weight/order/rpm/tpm 等）',
+    },
+    {
+      key: 'routing_strategy',
+      label: 'routing_strategy',
+      type: 'select',
+      required: true,
+      default: 'simple-shuffle',
+      options: [
+        'simple-shuffle',
+        'least-busy',
+        'latency-based-routing',
+        'cost-based-routing',
+        'usage-based-routing',
+        'semantic',
+      ],
+      hint: '路由策略；选 semantic 时需配置 semantic.api_key',
+    },
+    {
+      key: 'semantic.api_base',
+      label: 'semantic.api_base',
+      type: 'string',
+      default: 'https://api.openai.com/v1',
+      hint: 'Embeddings API base（OpenAI 兼容）',
+    },
+    {
+      key: 'semantic.api_key',
+      label: 'semantic.api_key',
+      type: 'string',
+      placeholder: 'routing_strategy=semantic 时必填',
+      hint: 'Embeddings API key',
+    },
+    {
+      key: 'semantic.model',
+      label: 'semantic.model',
+      type: 'string',
+      default: 'text-embedding-3-small',
+      hint: 'Embedding 模型名',
+    },
+    { key: 'semantic.timeout', label: 'semantic.timeout', type: 'number', default: 5000, min: 0, hint: 'Embeddings 超时（毫秒）' },
+    {
+      key: 'semantic.threshold',
+      label: 'semantic.threshold',
+      type: 'number',
+      default: 0.3,
+      min: 0,
+      max: 1,
+      hint: '最小余弦相似度；低于此值不参与匹配（除非 catch_all）',
+    },
+    {
+      key: 'semantic.selector_model',
+      label: 'semantic.selector_model',
+      type: 'string',
+      default: 'auto',
+      hint: '客户端使用该 model 名时触发跨模型语义选择',
+    },
+    {
+      key: 'semantic.catch_all_model',
+      label: 'semantic.catch_all_model',
+      type: 'string',
+      hint: '跨模型语义无命中时回退的 model_name',
+    },
+    { key: 'semantic.max_prompt_chars', label: 'semantic.max_prompt_chars', type: 'number', default: 4000, min: 0 },
+    { key: 'semantic.cache_ttl', label: 'semantic.cache_ttl', type: 'number', default: 86400, min: 0, hint: 'embedding 缓存 TTL（秒）' },
+    {
+      key: 'semantic.extra_headers',
+      label: 'semantic.extra_headers',
+      type: 'json',
+      default: '{}',
+      hint: 'Embeddings 请求额外 headers 对象',
+    },
+    { key: 'num_retries', label: 'num_retries', type: 'number', default: 2, min: 0 },
+    { key: 'timeout', label: 'timeout', type: 'number', default: 60000, min: 0, hint: '上游请求超时（毫秒）' },
+    { key: 'retry_after', label: 'retry_after', type: 'number', default: 200, min: 0 },
+    { key: 'allowed_fails', label: 'allowed_fails', type: 'number', default: 3, min: 0 },
+    { key: 'cooldown_time', label: 'cooldown_time', type: 'number', default: 5, min: 0, hint: '失败冷却时间（秒）' },
+    { key: 'enable_pre_call_checks', label: 'enable_pre_call_checks', type: 'boolean', default: true },
+    {
+      key: 'fallbacks',
+      label: 'fallbacks',
+      type: 'json',
+      default: '[]',
+      hint: '按模型回退：[{"model":"a","fallbacks":["b","c"]}]',
+    },
+    {
+      key: 'default_fallbacks',
+      label: 'default_fallbacks',
+      type: 'csv',
+      default: '',
+      placeholder: 'model-a,model-b',
+      hint: '全局默认回退 model_name 列表',
+    },
+    {
+      key: 'path_patterns',
+      label: 'path_patterns',
+      type: 'csv',
+      default:
+        '/chat/completions,/completions,/embeddings,/v1/chat/completions,/v1/completions,/v1/embeddings',
+      hint: '命中这些路径时启用路由',
+    },
+    { key: 'enable_models_endpoint', label: 'enable_models_endpoint', type: 'boolean', default: true, hint: '是否响应 GET /v1/models' },
+    { key: 'drop_params', label: 'drop_params', type: 'boolean', default: true },
+    { key: 'return_model_in_response', label: 'return_model_in_response', type: 'boolean', default: true },
+    { key: 'response_headers', label: 'response_headers', type: 'boolean', default: true },
+    {
+      key: 'state_backend',
+      label: 'state_backend',
+      type: 'select',
+      required: true,
+      default: 'local',
+      options: ['local', 'redis'],
+      hint: '状态后端：local（共享内存）或 redis（跨节点）；选 redis 时需配置 redis.host',
+    },
+    { key: 'shared_dict', label: 'shared_dict', type: 'string', default: 'ai_router' },
+    { key: 'redis.host', label: 'redis.host', type: 'string', placeholder: 'state_backend=redis 时必填' },
+    { key: 'redis.port', label: 'redis.port', type: 'number', default: 6379, min: 0, max: 65535 },
+    { key: 'redis.timeout', label: 'redis.timeout', type: 'number', default: 2000, min: 0, hint: 'Redis 超时（毫秒）' },
+    { key: 'redis.username', label: 'redis.username', type: 'string' },
+    { key: 'redis.password', label: 'redis.password', type: 'string' },
+    { key: 'redis.database', label: 'redis.database', type: 'number', default: 0, min: 0 },
+    { key: 'redis.ssl', label: 'redis.ssl', type: 'boolean', default: false },
+    { key: 'redis.ssl_verify', label: 'redis.ssl_verify', type: 'boolean', default: false },
+    { key: 'redis.server_name', label: 'redis.server_name', type: 'string' },
+    { key: 'redis.prefix', label: 'redis.prefix', type: 'string', default: 'ai_router' },
+    {
+      key: 'enable_virtual_keys',
+      label: 'enable_virtual_keys',
+      type: 'boolean',
+      default: false,
+      hint: '启用虚拟 Key 鉴权与预算',
+    },
+    {
+      key: 'master_key',
+      label: 'master_key',
+      type: 'string',
+      hint: '主 Key，可访问全部模型且不扣预算',
+    },
+    {
+      key: 'virtual_keys',
+      label: 'virtual_keys',
+      type: 'json',
+      default: '[]',
+      hint: '[{"key":"...","name":"dev","models":["gpt-*"],"max_budget":10,"token_cost":0.000001,"blocked":false}]',
+    },
+  ],
 }
 
 const PHASE_PLUGINS = new Set(['pre-function', 'post-function'])
@@ -798,6 +963,32 @@ export function buildSchemaPayload(
 
   if (plugin === 'acme' && out.tos_accepted !== true) {
     return { ok: false, error: 'acme 需要接受 ToS（tos_accepted=true）' }
+  }
+
+  if (plugin === 'ai-router') {
+    const modelList = out.model_list
+    if (!Array.isArray(modelList) || modelList.length === 0) {
+      return { ok: false, error: 'ai-router model_list 必须是非空数组' }
+    }
+    if (out.routing_strategy === 'semantic') {
+      const semantic = (out.semantic || {}) as Record<string, unknown>
+      if (!String(semantic.api_key || '').trim()) {
+        return { ok: false, error: 'routing_strategy=semantic 时需填写 semantic.api_key' }
+      }
+    }
+    if (out.state_backend === 'redis') {
+      const redis = (out.redis || {}) as Record<string, unknown>
+      if (!String(redis.host || '').trim()) {
+        return { ok: false, error: 'state_backend=redis 时需填写 redis.host' }
+      }
+    }
+    // Kong schema: semantic.extra_headers 为空对象时可省略
+    const semantic = out.semantic as Record<string, unknown> | undefined
+    if (semantic && semantic.extra_headers && typeof semantic.extra_headers === 'object') {
+      if (Object.keys(semantic.extra_headers as object).length === 0) {
+        delete semantic.extra_headers
+      }
+    }
   }
 
   return { ok: true, config: out }
