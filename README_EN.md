@@ -148,7 +148,7 @@ Open `http://localhost:5373`. The Vite dev server proxies `/api` to `http://loca
   - Authentication: basic-auth, hmac-auth, jwt, key-auth, ldap-auth, oauth2, session
   - Security: acme, bot-detection, cors, ip-restriction
   - Traffic Control: acl, proxy-cache, proxy-cache-advanced, rate-limiting, request-size-limiting, request-termination, response-ratelimiting, response-ratelimiting-advanced
-  - AI: ai-router
+  - AI: ai-router, ai-usage-to-header
   - Serverless: aws-lambda, azure-functions, pre-function, post-function
   - Analytics & Monitoring: datadog, opentelemetry, prometheus, statsd, zipkin
   - Transformations: correlation-id, grpc-gateway, grpc-gateway-advanced, grpc-web, grpc-web-advanced, request-gzip, request-transformer, response-gzip, response-transformer

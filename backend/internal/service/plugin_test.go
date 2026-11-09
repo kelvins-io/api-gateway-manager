@@ -1,6 +1,9 @@
 package service
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestBuildPlugin(t *testing.T) {
 	enabled := true
@@ -27,6 +30,45 @@ func TestBuildPlugin(t *testing.T) {
 	}
 	if _, err := buildPlugin(1, UpsertPluginInput{Name: "ok", Plugin: "acl", Config: map[string]interface{}{"allow": "a", "deny": "b"}}); err == nil {
 		t.Fatal("expected acl conflict")
+	}
+}
+
+func TestBuildPluginAIUsageToHeader(t *testing.T) {
+	item, err := buildPlugin(1, UpsertPluginInput{
+		Name:   "usage-hdr",
+		Plugin: "ai-usage-to-header",
+		Config: map[string]interface{}{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Plugin != "ai-usage-to-header" {
+		t.Fatalf("plugin = %s", item.Plugin)
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(item.Config, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg["header_name"] != "X-Kong-AI-Usage" || cfg["usage_field"] != "usage" {
+		t.Fatalf("config = %+v", cfg)
+	}
+
+	item, err = buildPlugin(1, UpsertPluginInput{
+		Name:   "usage-custom",
+		Plugin: "ai-usage-to-header",
+		Config: map[string]interface{}{
+			"header_name": "X-Custom-Usage",
+			"usage_field": "token_usage",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(item.Config, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg["header_name"] != "X-Custom-Usage" || cfg["usage_field"] != "token_usage" {
+		t.Fatalf("config = %+v", cfg)
 	}
 }
 

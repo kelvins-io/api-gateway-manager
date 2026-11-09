@@ -30,7 +30,7 @@ export const pluginCategories: PluginCategory[] = [
   },
   {
     label: 'AI',
-    plugins: ['ai-router'],
+    plugins: ['ai-router', 'ai-usage-to-header'],
   },
   {
     label: '无服务器 / Serverless',

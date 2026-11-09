@@ -19,11 +19,12 @@ var pluginNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
 // allowedPlugins is Kong Gateway 3.4.2 OSS bundled plugins plus custom plugins
 // (e.g. proxy-cache-advanced, response-ratelimiting-advanced, grpc-gateway-advanced,
-// grpc-web-advanced, request-gzip, response-gzip, ai-router).
+// grpc-web-advanced, request-gzip, response-gzip, ai-router, ai-usage-to-header).
 var allowedPlugins = map[string]struct{}{
 	"acl":                            {},
 	"acme":                           {},
 	"ai-router":                      {},
+	"ai-usage-to-header":             {},
 	"aws-lambda":                     {},
 	"azure-functions":                {},
 	"basic-auth":                     {},
@@ -427,6 +428,8 @@ func normalizePluginConfig(kind string, in map[string]interface{}) (map[string]i
 		}, nil
 	case "ai-router":
 		return normalizeAIRouterConfig(in)
+	case "ai-usage-to-header":
+		return normalizeAIUsageToHeaderConfig(in)
 	default:
 		// Pass through raw config for other Kong 3.4.2 OSS plugins; Kong validates on publish.
 		if in == nil {
@@ -526,6 +529,21 @@ func applyAPIPlugins(ctx context.Context, api *model.API) error {
 		return fmt.Errorf("sync plugins: %w", err)
 	}
 	return nil
+}
+
+func normalizeAIUsageToHeaderConfig(in map[string]interface{}) (map[string]interface{}, error) {
+	header := strField(in, "header_name", "X-Kong-AI-Usage")
+	if header == "" {
+		return nil, fmt.Errorf("%w: header_name is required", ErrBadRequest)
+	}
+	field := strField(in, "usage_field", "usage")
+	if field == "" {
+		return nil, fmt.Errorf("%w: usage_field is required", ErrBadRequest)
+	}
+	return map[string]interface{}{
+		"header_name": header,
+		"usage_field": field,
+	}, nil
 }
 
 func normalizeAIRouterConfig(in map[string]interface{}) (map[string]interface{}, error) {

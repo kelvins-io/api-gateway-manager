@@ -148,7 +148,7 @@ make frontend
   - 认证 / Authentication：basic-auth、hmac-auth、jwt、key-auth、ldap-auth、oauth2、session
   - 安全 / Security：acme、bot-detection、cors、ip-restriction
   - 流量控制 / Traffic Control：acl、proxy-cache、proxy-cache-advanced、rate-limiting、request-size-limiting、request-termination、response-ratelimiting、response-ratelimiting-advanced
-  - AI：ai-router
+  - AI：ai-router、ai-usage-to-header
   - 无服务器 / Serverless：aws-lambda、azure-functions、pre-function、post-function
   - 分析与监控 / Analytics & Monitoring：datadog、opentelemetry、prometheus、statsd、zipkin
   - 转换 / Transformations：correlation-id、grpc-gateway、grpc-gateway-advanced、grpc-web、grpc-web-advanced、request-gzip、request-transformer、response-gzip、response-transformer

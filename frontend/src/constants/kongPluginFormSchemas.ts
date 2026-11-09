@@ -640,6 +640,24 @@ export const pluginFormSchemas: Record<string, FormField[]> = {
     { key: 'port', label: 'port', type: 'number', required: true, min: 1, max: 65535 },
     { key: 'timeout', label: 'timeout', type: 'number', default: 10000, min: 0 },
   ],
+  'ai-usage-to-header': [
+    {
+      key: 'header_name',
+      label: 'header_name',
+      type: 'string',
+      required: true,
+      default: 'X-Kong-AI-Usage',
+      hint: '写入客户端的响应头名称，值为扁平化后的 usage 键值对',
+    },
+    {
+      key: 'usage_field',
+      label: 'usage_field',
+      type: 'string',
+      required: true,
+      default: 'usage',
+      hint: '上游 JSON body（或 SSE 最后一个 data chunk）中 usage 对象的字段名',
+    },
+  ],
   'ai-router': [
     {
       key: 'model_list',
