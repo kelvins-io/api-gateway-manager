@@ -569,7 +569,7 @@ func normalizeAIRouterConfig(in map[string]interface{}) (map[string]interface{},
 	) {
 		return nil, fmt.Errorf("%w: invalid routing_strategy", ErrBadRequest)
 	}
-	backend := strField(in, "state_backend", "local")
+	backend := strField(in, "state_backend", "redis")
 	if !oneOf(backend, "local", "redis") {
 		return nil, fmt.Errorf("%w: invalid state_backend", ErrBadRequest)
 	}
