@@ -33,6 +33,36 @@ func TestBuildPlugin(t *testing.T) {
 	}
 }
 
+func TestBuildPluginAICatalogAllowed(t *testing.T) {
+	for _, name := range []string{
+		"ai-a2a-proxy",
+		"ai-custom-guardrail",
+		"ai-llm-as-judge",
+		"ai-mcp-oauth2",
+		"ai-mcp-proxy",
+		"ai-prompt-compressor",
+		"ai-proxy-advanced",
+		"ai-rag-injector",
+		"ai-rate-limiting-advanced",
+		"ai-sanitizer",
+		"ai-semantic-cache",
+		"ai-semantic-prompt-guard",
+		"ai-semantic-response-guard",
+	} {
+		item, err := buildPlugin(1, UpsertPluginInput{
+			Name:   "p-" + name,
+			Plugin: name,
+			Config: map[string]interface{}{},
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if item.Plugin != name {
+			t.Fatalf("plugin = %s, want %s", item.Plugin, name)
+		}
+	}
+}
+
 func TestBuildPluginAIUsageToHeader(t *testing.T) {
 	item, err := buildPlugin(1, UpsertPluginInput{
 		Name:   "usage-hdr",
